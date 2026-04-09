@@ -268,7 +268,10 @@ export default function AdminClient() {
     setResult(null);
     setError(null);
     try {
-      const res = await fetch(url, { method: "GET" });
+      const headers = adminPassword
+        ? { "x-admin-password": adminPassword }
+        : {};
+      const res = await fetch(url, { method: "GET", headers });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(json?.error || json?.message || `HTTP ${res.status}`);

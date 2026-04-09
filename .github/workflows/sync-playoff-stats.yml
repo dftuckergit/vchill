@@ -1,0 +1,97 @@
+# Chains GET /api/sync-stats with increasing offset until next_offset >= total_players.
+# Set repository secrets: STATS_SYNC_BASE_URL (e.g. https://your-app.vercel.app), SYNC_STATS_SECRET (must match Vercel env).
+#
+# Optional: set the same SYNC_STATS_SECRET in Vercel Production env. Admin can still run sync from the browser
+# using x-admin-password (enter ADMIN_PASSWORD in Admin) when SYNC_STATS_SECRET is enabled.
+#
+# Off-season: disable this workflow in GitHub (Actions → workflow → … → Disable) or remove the schedule so
+# offset=0 is not run daily (first batch wipes that season’s stats before re-importing).
+
+name: Sync playoff stats
+
+on:
+  schedule:
+    # ~6 AM Eastern (DST); adjust as needed (UTC).
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "NHL playoff year (query param year=)"
+        required: false
+        default: "2025"
+      limit:
+        description: "Players per batch (keep small for Vercel ~60s limit)"
+        required: false
+        default: "8"
+      concurrency:
+        description: "NHL requests in parallel per batch (1–10)"
+        required: false
+        default: "1"
+
+concurrency:
+  group: sync-playoff-stats-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Chain sync-stats batches
+        env:
+          STATS_SYNC_BASE_URL: ${{ secrets.STATS_SYNC_BASE_URL }}
+          SYNC_STATS_SECRET: ${{ secrets.SYNC_STATS_SECRET }}
+          INPUT_YEAR: ${{ github.event.inputs.year }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_CONCURRENCY: ${{ github.event.inputs.concurrency }}
+        run: |
+          set -euo pipefail
+          BASE="${STATS_SYNC_BASE_URL%/}"
+          if [ -z "$BASE" ]; then
+            echo "::error::Missing repository secret STATS_SYNC_BASE_URL (production site origin, no trailing slash)"
+            exit 1
+          fi
+
+          YEAR="${INPUT_YEAR:-}"
+          LIMIT="${INPUT_LIMIT:-}"
+          CONCURRENCY="${INPUT_CONCURRENCY:-}"
+          [ -z "$YEAR" ] && YEAR=2025
+          [ -z "$LIMIT" ] && LIMIT=8
+          [ -z "$CONCURRENCY" ] && CONCURRENCY=1
+
+          AUTH=()
+          if [ -n "${SYNC_STATS_SECRET:-}" ]; then
+            AUTH=(-H "Authorization: Bearer ${SYNC_STATS_SECRET}")
+          else
+            echo "::warning::SYNC_STATS_SECRET is empty — calling a public /api/sync-stats (set secret + Vercel env to lock down)"
+          fi
+
+          OFFSET=0
+          BATCH=0
+          while true; do
+            BATCH=$((BATCH + 1))
+            URL="${BASE}/api/sync-stats?year=${YEAR}&limit=${LIMIT}&offset=${OFFSET}&concurrency=${CONCURRENCY}"
+            echo "=== Batch ${BATCH} ==="
+            HTTP=$(curl -sS -o /tmp/sync-stats.json -w "%{http_code}" "${AUTH[@]}" "$URL")
+            if [ "$HTTP" != "200" ]; then
+              echo "::error::HTTP ${HTTP}"
+              cat /tmp/sync-stats.json
+              exit 1
+            fi
+            OK=$(jq -r '.ok' /tmp/sync-stats.json)
+            if [ "$OK" != "true" ]; then
+              echo "::error::sync-stats returned ok=false"
+              cat /tmp/sync-stats.json
+              exit 1
+            fi
+            NEXT=$(jq -r '.next_offset' /tmp/sync-stats.json)
+            TOTAL=$(jq -r '.total_players' /tmp/sync-stats.json)
+            PLAYERS=$(jq -r '.players' /tmp/sync-stats.json)
+            ROWS=$(jq -r '.stats_rows' /tmp/sync-stats.json)
+            echo "players_in_batch=${PLAYERS} stats_rows=${ROWS} next_offset=${NEXT} total_players=${TOTAL}"
+            if [ "$NEXT" -ge "$TOTAL" ]; then
+              echo "Complete."
+              break
+            fi
+            OFFSET=$NEXT
+          done

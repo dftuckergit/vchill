@@ -5,6 +5,33 @@ import { playoffYearToSeasonId } from "@/lib/nhl/season";
 /** Hobby / Pro: allow long batched NHL fetches (default is often 10s). */
 export const maxDuration = 60;
 
+/**
+ * When SYNC_STATS_SECRET is set, require either:
+ * - Authorization: Bearer <secret> (GitHub Actions, curl), or
+ * - x-admin-password: <ADMIN_PASSWORD> (Admin UI sync buttons).
+ * If SYNC_STATS_SECRET is unset, the route stays open (local dev / trusted networks).
+ */
+function isSyncStatsAuthorized(req) {
+  const syncSecret = process.env.SYNC_STATS_SECRET;
+  if (!syncSecret) return true;
+
+  const auth = req.headers.get("authorization");
+  const bearer =
+    auth?.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null;
+  if (bearer === syncSecret) return true;
+
+  const headerSecret = req.headers.get("x-sync-stats-secret");
+  if (headerSecret === syncSecret) return true;
+
+  const adminPassword = process.env.ADMIN_PASSWORD || "";
+  if (adminPassword) {
+    const adminHeader = req.headers.get("x-admin-password");
+    if (adminHeader === adminPassword) return true;
+  }
+
+  return false;
+}
+
 function parseRoundFromGameId(gameId) {
   // Observed playoff format: YYYY 03 RR GG (e.g. 2024030217 => round 2)
   const s = String(gameId || "");
@@ -90,6 +117,13 @@ async function detectStatsColumns(supabase) {
 }
 
 export async function GET(req) {
+  if (!isSyncStatsAuthorized(req)) {
+    return Response.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get("year") || "2025");

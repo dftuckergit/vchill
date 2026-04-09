@@ -98,6 +98,7 @@ Errors often: `{ ok: false, error: string }` or `{ ok: false, step: string, erro
 ### `GET /api/sync-stats?year=&limit=&offset=&concurrency=`
 
 - **Query:** `year` (default `2025`); `offset` (default `0`); `limit` **optional** — if omitted, batch is **all players from `offset` to end**; `concurrency` optional (default **2**, clamped **1–10**)  
+- **Auth (optional):** If env **`SYNC_STATS_SECRET`** is set: send `Authorization: Bearer <secret>` or header `x-sync-stats-secret`, or **`x-admin-password`** (same as pool settings) for Admin browser sync. If unset, route is open.  
 - **Side effects:** If `offset===0`, `DELETE stats WHERE season`; probe insert detects goalie column names; `INSERT` per player from `/player/{nhl_id}/game-log/{season}/3`  
 - **Success:** `{ ok, year, season, offset, limit, concurrency, total_players, next_offset, players, stats_rows }`  
 - **Done:** repeat until `next_offset >= total_players`  
@@ -167,8 +168,11 @@ Errors often: `{ ok: false, error: string }` or `{ ok: false, step: string, erro
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` | same | Required — note name is **not** `ANON_KEY` |
 | `PARTICIPANTS_SHEET_URL` | `lib/participants/sheet.js` | Required for sync-participants |
 | `ADMIN_PASSWORD` | `app/api/pool-settings/route.js` | Required for `PUT`; missing → **503** |
+| `SYNC_STATS_SECRET` | `app/api/sync-stats/route.js` | Optional. If set, `GET /api/sync-stats` requires `Authorization: Bearer …` or `x-sync-stats-secret`, or `x-admin-password` matching `ADMIN_PASSWORD` (Admin UI). Match this value in GitHub secret `SYNC_STATS_SECRET`. |
 
 **Vercel (Production / Preview):** Add the same variables in the project **Settings → Environment Variables**. Use **Production** for the live site; add **Preview** if you want preview deploys to hit real Supabase (or use placeholders and accept broken previews).
+
+**GitHub Actions (playoff stats):** Repository secrets **`STATS_SYNC_BASE_URL`** (e.g. `https://your-project.vercel.app`, no trailing slash) and **`SYNC_STATS_SECRET`** (same string as Vercel `SYNC_STATS_SECRET`). Workflow: `.github/workflows/sync-playoff-stats.yml` — daily schedule + `workflow_dispatch`. Update default playoff **year** in the workflow or use manual dispatch inputs.
 
 ---
 
@@ -208,7 +212,7 @@ Errors often: `{ ok: false, error: string }` or `{ ok: false, step: string, erro
 
 ### Next tasks (ordered, file pointers)
 
-1. **Vercel Cron** (or similar) for `GET /api/sync-stats` — must loop `offset` until `next_offset >= total_players`; **`offset=0` wipes** that season’s `stats`. Optional secret header if route is public. (`app/api/sync-stats/route.js`; add `vercel.json` cron config when ready.)  
+1. **Done:** **GitHub Actions** chained `GET /api/sync-stats` — `.github/workflows/sync-playoff-stats.yml`; optional **`SYNC_STATS_SECRET`** on Vercel + GitHub. **Optional:** tweak cron time / default `year` each season.  
 2. **Out of scope (by design):** prior-round pick history on the picks page — roster history belongs on team pages only.  
 3. **Out of scope (by design):** stronger admin auth — shared `ADMIN_PASSWORD` is sufficient for this pool.
 
