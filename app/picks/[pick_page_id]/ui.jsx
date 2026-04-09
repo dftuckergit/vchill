@@ -128,6 +128,20 @@ export default function PicksClient({
     message: null,
   });
 
+  const savedIdsKey = JSON.stringify({
+    sel: [...(initialSelectedNhlIds ?? [])].sort((a, b) => a - b),
+    star: [...(initialStarNhlIds ?? [])].sort((a, b) => a - b),
+    locked: submissionsLocked,
+  });
+
+  useEffect(() => {
+    const playersById = new Map((initialPlayers ?? []).map((p) => [p.nhl_id, p]));
+    setRoster(buildInitialRoster({ playersById, initialSelectedNhlIds }));
+    setStars(buildInitialStars({ playersById, initialStarNhlIds }));
+    // Only re-hydrate from the server when saved selection / lock state changes (e.g. router.refresh after submit).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialPlayers is read from latest render when key changes
+  }, [savedIdsKey]);
+
   const players = useMemo(() => {
     return initialPlayers
       .filter((p) => (p.conference || "Unknown") === conference)

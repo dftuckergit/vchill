@@ -2,6 +2,9 @@ export const metadata = {
   title: "Picks | V Chill Pool",
 };
 
+/** Always read fresh picks + pool state (avoid CDN/stale RSC after submit). */
+export const dynamic = "force-dynamic";
+
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   filterPlayersByTeamAbbrevs,
@@ -187,8 +190,8 @@ export default async function PicksPage({ params }) {
 
   const roundTitle = poolRoundTitle(currentPoolRound);
 
-  const showSavedRoster =
-    !submissionsLocked && savedNhlIds.length > 0;
+  // Show saved roster whenever DB has picks for this round (edits still gated by submissionsLocked in the client).
+  const showSavedRoster = savedNhlIds.length > 0;
 
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-12">
