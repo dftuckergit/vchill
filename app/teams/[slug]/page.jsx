@@ -38,7 +38,9 @@ export default async function TeamPage({ params }) {
     .order("season", { ascending: false })
     .limit(1);
 
-  const season = seasonRows?.[0]?.season ?? null;
+  const seasonRaw = seasonRows?.[0]?.season ?? null;
+  const season =
+    seasonRaw != null && seasonRaw !== "" ? String(seasonRaw) : null;
 
   let poolSettings = null;
   let currentPoolRound = 1;

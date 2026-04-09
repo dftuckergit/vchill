@@ -19,7 +19,9 @@ export default async function StandingsPage() {
     .order("season", { ascending: false })
     .limit(1);
 
-  const season = seasonRows?.[0]?.season ?? null;
+  const seasonRaw = seasonRows?.[0]?.season ?? null;
+  const season =
+    seasonRaw != null && seasonRaw !== "" ? String(seasonRaw) : null;
 
   const [{ data: players }, { data: statsRows }, { data: picks }] = season
     ? await Promise.all([

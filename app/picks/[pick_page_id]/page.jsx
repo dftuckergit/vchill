@@ -45,7 +45,10 @@ export default async function PicksPage({ params }) {
     .order("season", { ascending: false })
     .limit(1);
 
-  const season = seasonRows?.[0]?.season ?? null;
+  // Align with submit route (String) so pool_settings / picks .eq("season", …) always match DB text.
+  const seasonRaw = seasonRows?.[0]?.season ?? null;
+  const season =
+    seasonRaw != null && seasonRaw !== "" ? String(seasonRaw) : null;
 
   let poolSettings = null;
   try {
@@ -158,8 +161,15 @@ export default async function PicksPage({ params }) {
       .in("round", roundFilter);
 
     const list = allSaved ?? [];
-    const r3 = list.filter((p) => p.round === 3);
-    savedPicks = r3.length ? r3 : list.filter((p) => p.round === 4);
+    // Pool rounds 1–2: rows are already filtered to that round. Only R3+4 window uses legacy round 4 fallback.
+    if (currentPoolRound === 3) {
+      const r3 = list.filter((p) => Number(p.round) === 3);
+      savedPicks = r3.length
+        ? r3
+        : list.filter((p) => Number(p.round) === 4);
+    } else {
+      savedPicks = list;
+    }
   }
 
   const savedPlayerIds = (savedPicks ?? [])
