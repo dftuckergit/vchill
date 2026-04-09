@@ -2,6 +2,9 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { nhlFetch } from "@/lib/nhl/api";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 
+/** Hobby / Pro: allow long batched NHL fetches (default is often 10s). */
+export const maxDuration = 60;
+
 function parseRoundFromGameId(gameId) {
   // Observed playoff format: YYYY 03 RR GG (e.g. 2024030217 => round 2)
   const s = String(gameId || "");

@@ -2,6 +2,8 @@ import { fetchParticipantsFromSheet } from "@/lib/participants/sheet";
 import { slugify } from "@/lib/slugify";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 function normalizeParticipantRow(row) {
   const name = (row.name || row.Name || "").trim();
   if (!name) return null;

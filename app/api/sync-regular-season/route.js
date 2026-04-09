@@ -2,6 +2,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { nhlFetch } from "@/lib/nhl/api";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 
+export const maxDuration = 60;
+
 function parseRoundFromGameId(gameId) {
   const s = String(gameId || "");
   if (s.length !== 10) return null;

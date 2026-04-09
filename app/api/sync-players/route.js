@@ -4,6 +4,9 @@ import { conferenceForTeamAbbrev } from "@/lib/nhl/team-conference";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 import { extractPlayoffTeamsFromBracket } from "@/lib/nhl/playoff-bracket-teams";
 
+/** Hobby / Pro: roster sync hits many NHL endpoints. */
+export const maxDuration = 60;
+
 function getText(v) {
   if (!v) return "";
   if (typeof v === "string") return v;
