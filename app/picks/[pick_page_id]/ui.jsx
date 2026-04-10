@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PICK_SALARY_CAP } from "@/lib/pick-roster-rules";
+import { teamPrimaryHex } from "@/lib/nhl/team-primary-colors";
 
 function DeadlineCountdown({ iso }) {
   const [now, setNow] = useState(() => Date.now());
@@ -35,12 +36,87 @@ function ToggleButton({ active, children, onClick }) {
       type="button"
       onClick={onClick}
       className={[
-        "rounded px-3 py-1 text-sm font-semibold",
-        active ? "bg-blue-200/60 text-zinc-900" : "bg-zinc-100 text-zinc-700",
+        "rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+        active ? "bg-sky-200/80 text-zinc-900" : "border border-zinc-200 bg-white text-zinc-700",
       ].join(" ")}
     >
       {children}
     </button>
+  );
+}
+
+function comparePickerRows(a, b, sortKey, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  const tieName = () => a.name.localeCompare(b.name) * m;
+  switch (sortKey) {
+    case "team": {
+      const c =
+        String(a.team_abbrev || "")
+          .toUpperCase()
+          .localeCompare(String(b.team_abbrev || "").toUpperCase()) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "name":
+      return tieName();
+    case "r1": {
+      const c = (Number(a.stats?.r1 ?? 0) - Number(b.stats?.r1 ?? 0)) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "r2": {
+      const c = (Number(a.stats?.r2 ?? 0) - Number(b.stats?.r2 ?? 0)) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "p": {
+      const c = (Number(a.stats?.total ?? 0) - Number(b.stats?.total ?? 0)) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "salary": {
+      const c = (Number(a.salary || 0) - Number(b.salary || 0)) * m;
+      return c !== 0 ? c : tieName();
+    }
+    default:
+      return tieName();
+  }
+}
+
+function SortTh({
+  label,
+  colKey,
+  sortKey,
+  sortDir,
+  alignRight,
+  onSort,
+  disabled,
+}) {
+  const active = sortKey === colKey;
+  return (
+    <th
+      scope="col"
+      className={[
+        "px-2 py-2 text-xs font-semibold text-zinc-800",
+        alignRight ? "text-right" : "text-left",
+      ].join(" ")}
+      aria-sort={
+        active ? (sortDir === "asc" ? "ascending" : "descending") : "none"
+      }
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onSort(colKey)}
+        className={[
+          "inline-flex max-w-full items-center gap-0.5 rounded px-0.5 hover:bg-zinc-200/80 disabled:pointer-events-none disabled:opacity-50",
+          alignRight ? "float-right clear-both" : "",
+        ].join(" ")}
+      >
+        <span>{label}</span>
+        {active ? (
+          <span className="text-[10px] text-zinc-500" aria-hidden>
+            {sortDir === "asc" ? "▲" : "▼"}
+          </span>
+        ) : null}
+      </button>
+    </th>
   );
 }
 
@@ -127,6 +203,8 @@ export default function PicksClient({
     status: "idle",
     message: null,
   });
+  const [sortKey, setSortKey] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
 
   const savedIdsKey = JSON.stringify({
     sel: [...(initialSelectedNhlIds ?? [])].sort((a, b) => a - b),
@@ -142,12 +220,27 @@ export default function PicksClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initialPlayers is read from latest render when key changes
   }, [savedIdsKey]);
 
-  const players = useMemo(() => {
+  const filteredPlayers = useMemo(() => {
     return initialPlayers
       .filter((p) => (p.conference || "Unknown") === conference)
-      .filter((p) => groupPosition(p.position) === positionGroup)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((p) => groupPosition(p.position) === positionGroup);
   }, [initialPlayers, conference, positionGroup]);
+
+  const players = useMemo(() => {
+    const next = [...filteredPlayers];
+    next.sort((a, b) => comparePickerRows(a, b, sortKey, sortDir));
+    return next;
+  }, [filteredPlayers, sortKey, sortDir]);
+
+  function onSortHeader(colKey) {
+    if (submissionsLocked) return;
+    if (sortKey === colKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(colKey);
+      setSortDir(colKey === "name" || colKey === "team" ? "asc" : "desc");
+    }
+  }
 
   const selectedIds = useMemo(() => {
     const ids = new Set();
@@ -374,83 +467,123 @@ export default function PicksClient({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-zinc-200 bg-white">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-12" />
+              <col />
+              <col className="w-[3.25rem]" />
+              <col className="w-[3.25rem]" />
+              <col className="w-[3.25rem]" />
+              <col className="w-[3.25rem]" />
+            </colgroup>
+            <thead className="border-b border-zinc-200 bg-zinc-100">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-700">
-                  Team
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-700">
-                  Player
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  Season
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  R1
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  R2
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  R3+4
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  Total
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-700">
-                  Salary
-                </th>
+                <SortTh
+                  label="Team"
+                  colKey="team"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
+                <SortTh
+                  label="Player"
+                  colKey="name"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
+                <SortTh
+                  label="R1"
+                  colKey="r1"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  alignRight
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
+                <SortTh
+                  label="R2"
+                  colKey="r2"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  alignRight
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
+                <SortTh
+                  label="P"
+                  colKey="p"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  alignRight
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
+                <SortTh
+                  label="$"
+                  colKey="salary"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  alignRight
+                  onSort={onSortHeader}
+                  disabled={submissionsLocked}
+                />
               </tr>
             </thead>
             <tbody
               className={submissionsLocked ? "pointer-events-none opacity-50" : ""}
             >
               {players.length ? (
-                players.map((p) => (
-                  <tr
-                    key={p.nhl_id}
-                    className={[
-                      "border-b border-zinc-100",
-                      selectedIds.has(p.nhl_id) ? "bg-blue-50/60" : "hover:bg-zinc-50",
-                    ].join(" ")}
-                  >
-                    <td className="px-3 py-2 font-semibold text-zinc-700">
-                      {p.team_abbrev}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-900">
-                      <button
-                        type="button"
-                        className="text-left hover:underline"
-                        onClick={() => addPlayer(p)}
-                      >
-                        {p.name}
-                      </button>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {p.season_points ?? 0}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {p.stats?.r1 ?? 0}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {p.stats?.r2 ?? 0}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {(p.stats?.r3 ?? 0) + (p.stats?.r4 ?? 0)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {p.stats?.total ?? 0}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-900">
-                      {Number(p.salary || 0)}
-                    </td>
-                  </tr>
-                ))
+                players.map((p) => {
+                  const hex = teamPrimaryHex(p.team_abbrev);
+                  return (
+                    <tr
+                      key={p.nhl_id}
+                      className={[
+                        "border-b border-zinc-100",
+                        selectedIds.has(p.nhl_id)
+                          ? "bg-sky-100/70"
+                          : "hover:bg-zinc-50",
+                      ].join(" ")}
+                    >
+                      <td className="px-2 py-2">
+                        <span
+                          className="font-bold tabular-nums"
+                          style={hex ? { color: hex } : { color: "#18181b" }}
+                        >
+                          {p.team_abbrev}
+                        </span>
+                      </td>
+                      <td className="max-w-0 px-2 py-2 text-zinc-900">
+                        <button
+                          type="button"
+                          className="block w-full truncate text-left hover:underline"
+                          onClick={() => addPlayer(p)}
+                        >
+                          {p.name}
+                        </button>
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                        {p.stats?.r1 ?? 0}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                        {p.stats?.r2 ?? 0}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                        {p.stats?.total ?? 0}
+                      </td>
+                      <td className="px-2 py-2 text-right text-sm font-bold tabular-nums text-zinc-900">
+                        {Number(p.salary || 0)}
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={6}
                     className="px-3 py-10 text-center text-xs text-zinc-500"
                   >
                     {!season ? (
@@ -508,34 +641,51 @@ export default function PicksClient({
                   slot ? (
                     <div
                       key={slot.nhl_id}
-                      className="flex items-center justify-between gap-3 rounded bg-zinc-200/80 px-3 py-2 text-xs text-zinc-800"
+                      className="flex items-center gap-2 rounded bg-zinc-200/80 px-3 py-2 text-xs text-zinc-800"
                     >
+                      <button
+                        type="button"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center text-lg leading-none disabled:opacity-50"
+                        onClick={() => toggleStar(conf, group, slot.nhl_id)}
+                        aria-label={
+                          stars[group] === slot.nhl_id
+                            ? "Clear star"
+                            : "Star player (double points)"
+                        }
+                        title="Star (double points)"
+                        disabled={submissionsLocked}
+                      >
+                        {stars[group] === slot.nhl_id ? (
+                          <span aria-hidden>⭐</span>
+                        ) : (
+                          <span className="text-zinc-400" aria-hidden>
+                            ☆
+                          </span>
+                        )}
+                      </button>
                       <span className="min-w-0 flex-1 truncate">
-                        <span className="font-semibold">{slot.team_abbrev}</span>{" "}
+                        <span
+                          className="font-bold"
+                          style={
+                            teamPrimaryHex(slot.team_abbrev)
+                              ? { color: teamPrimaryHex(slot.team_abbrev) }
+                              : { color: "#18181b" }
+                          }
+                        >
+                          {slot.team_abbrev}
+                        </span>{" "}
                         {slot.name}
                       </span>
-                      <span className="tabular-nums">{Number(slot.salary || 0)}</span>
+                      <span className="shrink-0 tabular-nums font-semibold">
+                        {Number(slot.salary || 0)}
+                      </span>
                       <button
                         type="button"
-                        className={[
-                          "ml-2 rounded px-2 py-1 text-[11px] font-semibold",
-                          stars[group] === slot.nhl_id
-                            ? "bg-amber-200 text-amber-900"
-                            : "bg-white/60 text-zinc-700 hover:bg-white",
-                        ].join(" ")}
-                        onClick={() => toggleStar(conf, group, slot.nhl_id)}
-                        aria-label="Toggle star"
-                        title="Star (double points)"
-                      >
-                        ★
-                      </button>
-                      <button
-                        type="button"
-                        className="ml-2 text-red-700 hover:underline"
+                        className="shrink-0 px-1 py-0.5 text-2xl font-light leading-none text-red-600 hover:text-red-700"
                         onClick={() => removePlayer(conf, group, slot.nhl_id)}
                         aria-label="Remove player"
                       >
-                        ×
+                        ✕
                       </button>
                     </div>
                   ) : (
@@ -557,16 +707,26 @@ export default function PicksClient({
           <span className="tabular-nums">{PICK_SALARY_CAP}</span>
         </div>
 
-        <div className="text-center text-xs text-amber-700">
-          {submissionsLocked
-            ? "🔒 This round is locked"
-            : !isRosterComplete
-              ? "⚠️ Team is incomplete"
-              : !areStarsChosen
-                ? "⚠️ Choose a star at each position"
-                : totalSalary > PICK_SALARY_CAP
-                  ? `⚠️ Over the $${PICK_SALARY_CAP} cap`
-                  : "Ready to submit"}
+        <div className="text-center text-xs font-medium">
+          {submissionsLocked ? (
+            <span className="text-zinc-600">🔒 This round is locked</span>
+          ) : !isRosterComplete && !areStarsChosen ? (
+            <span className="text-red-600">
+              ⚠️ Team is incomplete ⭐ Choose a star at each position
+            </span>
+          ) : !isRosterComplete ? (
+            <span className="text-red-600">⚠️ Team is incomplete</span>
+          ) : !areStarsChosen ? (
+            <span className="text-red-600">
+              ⚠️ Choose a star at each position
+            </span>
+          ) : totalSalary > PICK_SALARY_CAP ? (
+            <span className="text-red-600">
+              {`⚠️ Over the $${PICK_SALARY_CAP} cap`}
+            </span>
+          ) : (
+            <span className="text-emerald-700">Ready to submit</span>
+          )}
         </div>
 
         <button

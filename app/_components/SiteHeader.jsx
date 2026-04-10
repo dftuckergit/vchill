@@ -5,13 +5,13 @@ function TeamsMenu({ teams }) {
   return (
     <details className="relative">
       <summary className="cursor-pointer list-none select-none text-sm font-medium text-white/90 hover:text-white">
-        Teams <span aria-hidden>▾</span>
+        Teams <span aria-hidden className="text-xs opacity-90">⌵</span>
       </summary>
-      <div className="absolute right-0 z-10 mt-2 w-56 overflow-hidden rounded-xl bg-[#163a59] py-2 shadow-lg ring-1 ring-black/10">
+      <div className="absolute right-0 z-10 mt-1.5 min-w-[14rem] overflow-hidden rounded-lg bg-[#163a59] py-1.5 shadow-md ring-1 ring-black/10">
         {teams.map((t) => (
           <Link
             key={t.slug}
-            className="block px-4 py-1.5 text-sm font-semibold text-white/95 hover:bg-white/10"
+            className="block px-4 py-2 text-sm font-semibold text-white/95 hover:bg-white/10"
             href={`/teams/${t.slug}`}
           >
             {t.name}
@@ -31,7 +31,7 @@ function MobileMenu({ teams }) {
       >
         <span className="text-xl leading-none">≡</span>
       </summary>
-      <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl bg-[#163a59] py-2 shadow-lg ring-1 ring-black/10">
+      <div className="absolute right-0 z-20 mt-1.5 w-64 overflow-hidden rounded-lg bg-[#163a59] py-1.5 shadow-md ring-1 ring-black/10">
         <Link
           className="block px-4 py-2 text-sm font-semibold text-white/95 hover:bg-white/10"
           href="/standings"
@@ -48,7 +48,7 @@ function MobileMenu({ teams }) {
         {teams.map((t) => (
           <Link
             key={t.slug}
-            className="block px-4 py-1.5 text-sm font-semibold text-white/95 hover:bg-white/10"
+            className="block px-4 py-2 text-sm font-semibold text-white/95 hover:bg-white/10"
             href={`/teams/${t.slug}`}
           >
             {t.name}
@@ -77,7 +77,8 @@ export async function SiteHeader() {
             The V Chill Playoff Pool <span aria-hidden>🏒</span>
           </Link>
           <span className="text-xs text-white/70">
-            powered by <span className="italic font-semibold">Searlenet</span>™
+            powered by{" "}
+            <span className="font-bold italic text-white/90">Searlenet</span>™
           </span>
         </div>
 

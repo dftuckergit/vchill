@@ -206,8 +206,8 @@ export default async function PicksPage({ params }) {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-12">
       <div className="w-full max-w-6xl">
-        <h1 className="text-center text-[32px] leading-[1.0] font-semibold text-[#163a59]">
-          Pick Page {pick_page_id}
+        <h1 className="font-display text-center text-[32px] leading-[1.0] font-bold text-[#163a59]">
+          {participant?.name?.trim() || `Pick page ${pick_page_id}`}
         </h1>
 
         <p className="mt-4 text-center text-[16px] leading-[1.2] text-zinc-800">

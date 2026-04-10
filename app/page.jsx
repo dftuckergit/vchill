@@ -2,13 +2,13 @@ export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-20">
       <div className="w-full max-w-3xl text-center">
-        <h1 className="text-[32px] leading-[1.0] font-semibold text-[#163a59]">
+        <h1 className="text-[32px] leading-[1.0] font-bold text-[#163a59]">
           Welcome to the 12th Annual Edition!
           <br />
           Here&apos;s how to play
         </h1>
 
-        <h2 className="mt-10 text-[24px] leading-[1.2] font-semibold text-[#163a59]">
+        <h2 className="mt-10 text-[24px] leading-[1.2] font-bold text-[#163a59]">
           🏒 Join Now 🏒
         </h2>
         <p className="mt-3 text-[16px] leading-[1.2] text-zinc-800">
@@ -19,7 +19,7 @@ export default function Home() {
           Step 3 🔮 you pick your chill team for Round 1
         </p>
 
-        <h2 className="mt-10 text-[24px] leading-[1.2] font-semibold text-[#163a59]">
+        <h2 className="mt-10 text-[24px] leading-[1.2] font-bold text-[#163a59]">
           💰 Prizes 💰
         </h2>
         <p className="mt-3 text-[16px] leading-[1.2] text-zinc-800">
@@ -27,7 +27,7 @@ export default function Home() {
           rest!
         </p>
 
-        <h2 className="mt-10 text-[24px] leading-[1.2] font-semibold text-[#163a59]">
+        <h2 className="mt-10 text-[24px] leading-[1.2] font-bold text-[#163a59]">
           ⏰ Deadline ⏰
         </h2>
         <p className="mt-3 text-[16px] leading-[1.2] text-zinc-800">
@@ -36,7 +36,7 @@ export default function Home() {
           The pick deadline will be posted on your pick page soon.
         </p>
 
-        <h2 className="mt-10 text-[24px] leading-[1.2] font-semibold text-[#163a59]">
+        <h2 className="mt-10 text-[24px] leading-[1.2] font-bold text-[#163a59]">
           🗣 Friends 🗣
         </h2>
         <p className="mt-3 text-[16px] leading-[1.2] text-zinc-800">

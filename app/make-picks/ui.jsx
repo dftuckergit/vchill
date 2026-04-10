@@ -10,7 +10,7 @@ export default function MakePicksClient() {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-20">
       <div className="w-full max-w-md text-center">
-        <h1 className="text-[32px] leading-[1.0] font-semibold text-[#163a59]">
+        <h1 className="text-[32px] leading-[1.0] font-bold text-[#163a59]">
           Make picks
         </h1>
         <p className="mt-4 text-[16px] leading-[1.2] text-zinc-800">

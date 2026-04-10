@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { teamPrimaryHex } from "@/lib/nhl/team-primary-colors";
 
 function slotLabel(p) {
   const conf = p?.conference === "West" ? "West" : p?.conference === "East" ? "East" : "";
@@ -12,32 +13,47 @@ function RoundBlock({ title, picks, total, picksRevealed }) {
   const rows = picks?.length ? picks : [];
   return (
     <div>
-      <h2 className="text-xs font-semibold tracking-wide text-zinc-900">{title}</h2>
-      <div className="mt-3 space-y-2">
+      <h2 className="text-xs font-bold tracking-wide text-zinc-900">{title}</h2>
+      <div className="mt-3 space-y-2.5">
         {!picksRevealed ? (
           <p className="text-xs text-zinc-500">
             Picks stay private until after this round&apos;s deadline.
           </p>
         ) : rows.length ? (
-          rows.map((p) => (
-            <div
-              key={`${p.round ?? ""}:${p.nhl_id ?? p.player_id}`}
-              className="flex justify-between gap-3"
-            >
-              <span className="text-zinc-700">
-                {slotLabel(p)}
-                {p.is_star ? " ★" : ""}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-zinc-900">
-                <span className="font-semibold">{p.team_abbrev}</span> {p.name}
-              </span>
-              <span className="tabular-nums text-zinc-900">{p.points}</span>
-            </div>
-          ))
+          rows.map((p) => {
+            const hex = teamPrimaryHex(p.team_abbrev);
+            return (
+              <div
+                key={`${p.round ?? ""}:${p.nhl_id ?? p.player_id}`}
+                className="flex items-baseline gap-2 text-sm"
+              >
+                <span className="w-14 shrink-0 text-xs text-zinc-500">
+                  {slotLabel(p)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-zinc-900">
+                  {p.is_star ? (
+                    <span className="mr-0.5" aria-label="Star pick">
+                      ⭐
+                    </span>
+                  ) : null}
+                  <span
+                    className="font-bold"
+                    style={hex ? { color: hex } : { color: "#18181b" }}
+                  >
+                    {p.team_abbrev}
+                  </span>{" "}
+                  <span className="font-normal">{p.name}</span>
+                </span>
+                <span className="w-10 shrink-0 text-right text-sm font-bold tabular-nums text-zinc-900">
+                  {p.points}
+                </span>
+              </div>
+            );
+          })
         ) : (
           <div className="text-xs text-zinc-500">No picks submitted yet.</div>
         )}
-        <div className="pt-2 font-semibold text-zinc-900">
+        <div className="border-t border-zinc-200 pt-2 text-sm font-bold text-zinc-900">
           TOTAL{" "}
           <span className="float-right tabular-nums">
             {picksRevealed ? total : "—"}
@@ -137,7 +153,7 @@ export default function TeamClient({
         />
       </div>
 
-      <h2 className="mt-14 text-center text-[32px] leading-[1.0] font-semibold text-[#163a59]">
+      <h2 className="font-display mt-14 text-center text-[32px] leading-[1.0] font-bold text-[#163a59]">
         Compare to
       </h2>
       <div className="mx-auto mt-8 flex max-w-2xl items-start justify-between gap-10">
@@ -175,7 +191,7 @@ export default function TeamClient({
 
         <div className="w-64">
           <select
-            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+            className="w-full rounded-full border border-zinc-300 bg-zinc-100 px-4 py-2.5 text-sm text-zinc-900"
             value={compareId}
             onChange={(e) => loadCompare(e.target.value)}
           >
