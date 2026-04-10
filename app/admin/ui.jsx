@@ -113,9 +113,9 @@ export default function AdminClient() {
   const yearOptions = useMemo(() => buildYearOptions(), []);
   const [year, setYear] = useState(2025);
   const season = useMemo(() => playoffYearToSeasonId(year), [year]);
-  const [statsLimit, setStatsLimit] = useState(50);
+  const [statsLimit, setStatsLimit] = useState(8);
   const [statsOffset, setStatsOffset] = useState(0);
-  const [statsConcurrency, setStatsConcurrency] = useState(2);
+  const [statsConcurrency, setStatsConcurrency] = useState(1);
   const [regLimit, setRegLimit] = useState(25);
   const [regOffset, setRegOffset] = useState(0);
   const [running, setRunning] = useState(null);
@@ -188,6 +188,17 @@ export default function AdminClient() {
             )
           )
         );
+        setStatsLimit(
+          Number.isFinite(Number(s.stats_sync_limit)) && s.stats_sync_limit >= 1
+            ? Math.min(100, Math.round(Number(s.stats_sync_limit)))
+            : 8
+        );
+        setStatsConcurrency(
+          Number.isFinite(Number(s.stats_sync_concurrency)) &&
+            s.stats_sync_concurrency >= 1
+            ? Math.min(10, Math.round(Number(s.stats_sync_concurrency)))
+            : 1
+        );
       } catch (e) {
         if (!cancelled) {
           setPoolLoadError(e instanceof Error ? e.message : String(e));
@@ -246,6 +257,8 @@ export default function AdminClient() {
           eligibleR2.size > 0 ? [...eligibleR2].sort() : null,
         eligible_teams_r3:
           eligibleR3.size > 0 ? [...eligibleR3].sort() : null,
+        stats_sync_limit: statsLimit,
+        stats_sync_concurrency: statsConcurrency,
         admin_password: adminPassword,
       };
       const res = await fetch("/api/pool-settings", {
@@ -256,6 +269,17 @@ export default function AdminClient() {
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
       setPoolSaveResult(json);
+      if (json?.settings) {
+        const s = json.settings;
+        if (s.stats_sync_limit != null)
+          setStatsLimit(
+            Math.max(1, Math.min(100, Math.round(Number(s.stats_sync_limit))))
+          );
+        if (s.stats_sync_concurrency != null)
+          setStatsConcurrency(
+            Math.max(1, Math.min(10, Math.round(Number(s.stats_sync_concurrency))))
+          );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -594,9 +618,52 @@ export default function AdminClient() {
             Batched sync from NHL playoff game logs. After each batch, use{" "}
             <code className="rounded bg-zinc-100 px-1">next_offset</code> in the
             response and run again until finished. During the playoffs, run
-            daily (or automate with a cron job). Keep concurrency low to avoid
+            daily (or automate with GitHub Actions). Keep concurrency low to avoid
             rate limits.
           </p>
+          <p className="rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700 ring-1 ring-zinc-200">
+            <span className="font-semibold text-zinc-900">Limit</span> and{" "}
+            <span className="font-semibold text-zinc-900">concurrency</span> are
+            stored per season in{" "}
+            <code className="rounded bg-white px-1">pool_settings</code> when you
+            click <span className="font-semibold">Save pool settings</span> above.
+            <span className="font-semibold"> Offset</span> is not saved (session-only
+            for stepping through batches).
+          </p>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-zinc-700">
+              Limit presets (players per batch)
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {[8, 15, 25, 50].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-50"
+                  onClick={() => setStatsLimit(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-zinc-700">
+              Concurrency presets
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {[1, 2].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-50"
+                  onClick={() => setStatsConcurrency(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <label className="text-sm text-zinc-700">
               Limit
@@ -604,7 +671,11 @@ export default function AdminClient() {
                 className="ml-2 w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
                 inputMode="numeric"
                 value={statsLimit}
-                onChange={(e) => setStatsLimit(Number(e.target.value || 0))}
+                onChange={(e) =>
+                  setStatsLimit(
+                    Math.max(1, Math.min(100, Number(e.target.value) || 1))
+                  )
+                }
               />
             </label>
             <label className="text-sm text-zinc-700">
@@ -623,7 +694,9 @@ export default function AdminClient() {
                 inputMode="numeric"
                 value={statsConcurrency}
                 onChange={(e) =>
-                  setStatsConcurrency(Math.max(1, Number(e.target.value || 1)))
+                  setStatsConcurrency(
+                    Math.max(1, Math.min(10, Number(e.target.value) || 1))
+                  )
                 }
               />
             </label>

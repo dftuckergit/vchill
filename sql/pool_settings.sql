@@ -9,6 +9,8 @@ create table if not exists pool_settings (
   eligible_teams_r1 text[],
   eligible_teams_r2 text[],
   eligible_teams_r3 text[],
+  stats_sync_limit integer not null default 8,
+  stats_sync_concurrency integer not null default 1,
   updated_at timestamptz default now()
 );
 

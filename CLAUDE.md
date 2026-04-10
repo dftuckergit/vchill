@@ -52,8 +52,9 @@ Annual fantasy **NHL playoff** pool (“V Chill Pool”). Participants get `/pic
 | `lib/pick-roster-rules.js` | `PICK_SALARY_CAP`, `validatePickRosterAndStars` |
 | `lib/nhl/team-conference.js` | `TEAM_CONFERENCE`, `normalizePlayerConference`, `conferenceForTeamAbbrev` |
 | `lib/nhl/team-abbrevs.js` | `NHL_TEAM_ABBREVS` (32 codes) — **not** used by Admin eligible UI currently |
-| `sql/pool_settings.sql` | `CREATE TABLE pool_settings` + `eligible_teams_r1`–`r3` |
+| `sql/pool_settings.sql` | `CREATE TABLE pool_settings` + eligible columns + stats sync defaults |
 | `sql/pool_settings_eligible_teams.sql` | `ALTER` if table predates eligible columns |
+| `sql/pool_settings_stats_sync_defaults.sql` | `ALTER` if table predates `stats_sync_*` columns |
 
 **Other core paths (unchanged role):** `app/standings/page.jsx`, `app/teams/[slug]/page.jsx`, `ui.jsx`, `app/api/sync-stats/route.js`, `app/api/sync-regular-season/route.js`, `app/api/sync-participants/route.js`, `app/api/picks/submit/route.js`, `app/api/team-summary/route.js`, `lib/scoring.js`, `lib/supabase/server.js`, `lib/env.js`.
 
@@ -115,13 +116,13 @@ Errors often: `{ ok: false, error: string }` or `{ ok: false, step: string, erro
 
 - **Query:** `season` required (e.g. `20242025`)  
 - **Side effects:** none  
-- **Success:** `{ ok: true, settings }` — `current_round` 1–3, `deadline_r1`–`r3` ISO or null, `eligible_teams_r1`–`r3` array or null, `updated_at`  
+- **Success:** `{ ok: true, settings }` — `current_round` 1–3, `deadline_r1`–`r3` ISO or null, `eligible_teams_r1`–`r3` array or null, `stats_sync_limit` / `stats_sync_concurrency` (integers), `updated_at`  
 - **Failures:** missing `season`, Supabase error
 
 ### `PUT /api/pool-settings`
 
 - **Auth:** `ADMIN_PASSWORD`; match `x-admin-password` header **or** body `admin_password`  
-- **Body:** `season`, `current_round` (1–3), `deadline_r1`–`r3` (ISO or null). `eligible_teams_r1`–`r3`: array or null. **Omit** eligible key → keep existing from DB for that key; deadlines **always** from body (missing → null).  
+- **Body:** `season`, `current_round` (1–3), `deadline_r1`–`r3` (ISO or null). `eligible_teams_r1`–`r3`: array or null. **Omit** eligible key → keep existing from DB for that key; deadlines **always** from body (missing → null). Optional **`stats_sync_limit`** (1–100) and **`stats_sync_concurrency`** (1–10); **omit** → keep existing (defaults 8 / 1).  
 - **Side effects:** `upsert` on `season`; eligible arrays **intersected** with bracket for `seasonIdToPlayoffYear(season)`  
 - **Success:** `{ ok: true, settings }` + optional `eligible_teams_removed_not_in_playoffs: string[]`  
 - **Failures:** `503` no `ADMIN_PASSWORD`; `401`; `400` invalid `season` / round; `502` bracket empty/unavailable; `500` upsert
@@ -152,7 +153,7 @@ Errors often: `{ ok: false, error: string }` or `{ ok: false, step: string, erro
 | `players` | `id`, `nhl_id`, `name`, `team`, `team_abbrev`, `position` (`F`/`D`/`G`), `conference`, `salary`, `season`, `season_points` (reg-season sync) |
 | `picks` | `participant_id`, `player_id`, `round` (pool 1–3), `season`, `is_star`, `submitted_at` |
 | `stats` | `nhl_id`, `season`, `round` (NHL 1–4), `goals`, `assists`, + goalie fields per probe |
-| `pool_settings` | **PK** `season`; `current_round` CHECK 1–3; `deadline_r1`–`r3` timestamptz; `eligible_teams_r1`–`r3` `text[]` null; `updated_at` |
+| `pool_settings` | **PK** `season`; `current_round` CHECK 1–3; `deadline_r1`–`r3` timestamptz; `eligible_teams_r1`–`r3` `text[]` null; **`stats_sync_limit`** (default 8, clamped 1–100); **`stats_sync_concurrency`** (default 1, clamped 1–10); `updated_at` |
 
 **Stats goalie column detection** (`app/api/sync-stats/route.js`): tries insert combinations of wins (`goalie_wins` \| `goalieWins` \| `wins`) and shutouts (`goalie_shutout` \| `goalie_shutouts` \| `shutouts`).
 

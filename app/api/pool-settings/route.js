@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   fetchPoolSettings,
+  mergeStatsSyncFromPut,
   normalizePoolSettingsRow,
 } from "@/lib/pool-settings";
 import { seasonIdToPlayoffYear } from "@/lib/nhl/season";
@@ -132,6 +133,11 @@ export async function PUT(req) {
       ...new Set([...r1.removed, ...r2.removed, ...r3.removed]),
     ];
 
+    const { stats_sync_limit, stats_sync_concurrency } = mergeStatsSyncFromPut(
+      body,
+      existing
+    );
+
     const now = new Date().toISOString();
     const row = {
       season,
@@ -142,6 +148,8 @@ export async function PUT(req) {
       eligible_teams_r1,
       eligible_teams_r2,
       eligible_teams_r3,
+      stats_sync_limit,
+      stats_sync_concurrency,
       updated_at: now,
     };
 
