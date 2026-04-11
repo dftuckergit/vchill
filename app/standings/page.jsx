@@ -45,7 +45,7 @@ export default async function StandingsPage() {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
       <div className="w-full max-w-3xl">
-        <h1 className="font-display text-center text-[32px] leading-[1.0] font-bold text-[#163a59]">
+        <h1 className="text-center text-[32px] leading-[1.0] font-black text-[#163a59]">
           Team Standings
         </h1>
 
@@ -53,11 +53,11 @@ export default async function StandingsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-300 text-zinc-900">
-                <th className="px-2 py-2.5 text-left text-xs font-bold">Team</th>
-                <th className="px-2 py-2.5 text-right text-xs font-bold">R1</th>
-                <th className="px-2 py-2.5 text-right text-xs font-bold">R2</th>
-                <th className="px-2 py-2.5 text-right text-xs font-bold">R3+4</th>
-                <th className="px-2 py-2.5 text-right text-xs font-bold">Total</th>
+                <th className="px-2 py-2.5 text-left text-xs font-black">Team</th>
+                <th className="px-2 py-2.5 text-right text-xs font-black">R1</th>
+                <th className="px-2 py-2.5 text-right text-xs font-black">R2</th>
+                <th className="px-2 py-2.5 text-right text-xs font-black">R3+4</th>
+                <th className="px-2 py-2.5 text-right text-xs font-black">Total</th>
               </tr>
             </thead>
             <tbody className="text-zinc-900">

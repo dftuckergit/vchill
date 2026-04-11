@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PICK_SALARY_CAP } from "@/lib/pick-roster-rules";
 import { teamPrimaryHex } from "@/lib/nhl/team-primary-colors";
+
+/** Matches star / remove control width so empty and filled pick rows stay aligned */
+const PICK_CHIP_GRID =
+  "relative grid h-[36px] max-h-[36px] w-full min-w-0 shrink-0 grid-cols-[2rem_minmax(0,1fr)_minmax(2.25rem,auto)_2rem] items-center gap-2 overflow-hidden rounded-[8px] px-3 py-0 text-sm leading-none";
 
 function DeadlineCountdown({ iso }) {
   const [now, setNow] = useState(() => Date.now());
@@ -66,7 +70,18 @@ function comparePickerRows(a, b, sortKey, dir) {
       const c = (Number(a.stats?.r2 ?? 0) - Number(b.stats?.r2 ?? 0)) * m;
       return c !== 0 ? c : tieName();
     }
-    case "p": {
+    case "season": {
+      const c =
+        (Number(a.season_points ?? 0) - Number(b.season_points ?? 0)) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "r34": {
+      const ar = Number(a.stats?.r3 ?? 0) + Number(a.stats?.r4 ?? 0);
+      const br = Number(b.stats?.r3 ?? 0) + Number(b.stats?.r4 ?? 0);
+      const c = (ar - br) * m;
+      return c !== 0 ? c : tieName();
+    }
+    case "t": {
       const c = (Number(a.stats?.total ?? 0) - Number(b.stats?.total ?? 0)) * m;
       return c !== 0 ? c : tieName();
     }
@@ -85,15 +100,38 @@ function SortTh({
   sortKey,
   sortDir,
   alignRight,
+  /** Team & Player: reserved arrow slot on the right; numeric cols on the left */
+  arrowAfterLabel,
+  /** Player column label can shrink with ellipsis; others stay on one line */
+  labelTruncate,
   onSort,
   disabled,
 }) {
   const active = sortKey === colKey;
+  const arrow = (
+    <span
+      className="inline-flex w-3 shrink-0 select-none items-center justify-center text-[10px] leading-none text-zinc-500"
+      aria-hidden
+    >
+      {active ? (
+        sortDir === "asc" ? (
+          "▲"
+        ) : (
+          "▼"
+        )
+      ) : (
+        <span className="invisible">▲</span>
+      )}
+    </span>
+  );
+  const labelClass = labelTruncate
+    ? "min-w-0 flex-1 truncate text-left"
+    : "shrink-0 whitespace-nowrap";
   return (
     <th
       scope="col"
       className={[
-        "px-2 py-2 text-xs font-semibold text-zinc-800",
+        "px-2 py-2 text-xs font-black text-zinc-800",
         alignRight ? "text-right" : "text-left",
       ].join(" ")}
       aria-sort={
@@ -105,16 +143,13 @@ function SortTh({
         disabled={disabled}
         onClick={() => onSort(colKey)}
         className={[
-          "inline-flex max-w-full items-center gap-0.5 rounded px-0.5 hover:bg-zinc-200/80 disabled:pointer-events-none disabled:opacity-50",
-          alignRight ? "float-right clear-both" : "",
+          "flex min-h-[1.25rem] w-full min-w-0 max-w-full items-center gap-1 px-0.5 disabled:pointer-events-none disabled:opacity-50",
+          alignRight ? "justify-end" : "justify-start",
         ].join(" ")}
       >
-        <span>{label}</span>
-        {active ? (
-          <span className="text-[10px] text-zinc-500" aria-hidden>
-            {sortDir === "asc" ? "▲" : "▼"}
-          </span>
-        ) : null}
+        {!arrowAfterLabel ? arrow : null}
+        <span className={labelClass}>{label}</span>
+        {arrowAfterLabel ? arrow : null}
       </button>
     </th>
   );
@@ -205,6 +240,45 @@ export default function PicksClient({
   });
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+
+  /** Desktop: picker height tracks picks column so the table scrolls inside. */
+  const picksRef = useRef(null);
+  const [picksColumnPx, setPicksColumnPx] = useState(null);
+
+  useLayoutEffect(() => {
+    const el = picksRef.current;
+    if (!el || typeof window === "undefined") return undefined;
+
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const measure = () => {
+      if (!mq.matches) {
+        setPicksColumnPx(null);
+        return;
+      }
+      // Picks must not be min-h-0 in the grid or it shrinks to the row and
+      // under-measures. Use scrollHeight as well so we always get full content.
+      const h = Math.max(
+        el.getBoundingClientRect().height,
+        el.scrollHeight,
+        el.offsetHeight,
+      );
+      setPicksColumnPx(Math.round(h));
+    };
+
+    const sync = () => {
+      requestAnimationFrame(measure);
+    };
+
+    const ro = new ResizeObserver(sync);
+    ro.observe(el, { box: "border-box" });
+    mq.addEventListener("change", sync);
+    sync();
+
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", sync);
+    };
+  }, []);
 
   const savedIdsKey = JSON.stringify({
     sel: [...(initialSelectedNhlIds ?? [])].sort((a, b) => a - b),
@@ -385,207 +459,211 @@ export default function PicksClient({
         </p>
       ) : null}
 
-      {pickerMeta && pickerMeta.season ? (
-        <div className="mt-3 space-y-2 text-center text-xs text-zinc-500">
-          {pickerMeta.eligibleTeamFilterActive &&
-          pickerMeta.eligibleFilterPoolRound != null &&
-          pickerMeta.eligibleTeamAbbrevsSorted?.length ? (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-950 ring-1 ring-amber-200">
-              <span className="font-semibold">Eligible-team filter (pool round{" "}
-              {pickerMeta.eligibleFilterPoolRound}):</span> only players on{" "}
-              <span className="font-mono">
-                {pickerMeta.eligibleTeamAbbrevsSorted.join(", ")}
-              </span>
-              . This uses the Admin list for the same round as{" "}
-              <span className="font-semibold">Current pool round</span> — not the
-              other round sections. Change that dropdown or edit the matching
-              eligible-teams block.
-            </p>
-          ) : null}
-          <p>
-            <span className="font-mono text-zinc-700">{pickerMeta.totalPlayersInSeason}</span>{" "}
-            players synced for season{" "}
-            <span className="font-mono text-zinc-700">{pickerMeta.season}</span>
-            {pickerMeta.totalInPicker !== pickerMeta.totalPlayersInSeason ? (
-              <>
-                {" "}
-                — showing{" "}
-                <span className="font-mono text-zinc-700">{pickerMeta.totalInPicker}</span>{" "}
-                after eligible-team rules.
-              </>
-            ) : (
-              <> — all are in the picker.</>
-            )}{" "}
-            {pickerMeta.eligibleTeamFilterActive &&
-            pickerMeta.totalInPicker < pickerMeta.totalPlayersInSeason
-              ? "In Admin, clear eligible teams or add teams to see more players."
-              : null}
-          </p>
-        </div>
-      ) : !season ? (
+      {pickerMeta && pickerMeta.season ? null : !season ? (
         <p className="mt-3 text-center text-xs text-amber-800">
           No players in the database yet. In Admin, choose the playoff year and
           run <span className="font-semibold">Sync players</span>.
         </p>
       ) : null}
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-      <div className="rounded-md border border-zinc-200 bg-white">
-        <div className="flex gap-2 border-b border-zinc-200 p-3">
-          <ToggleButton
-            active={conference === "East"}
-            onClick={() => setConference("East")}
-          >
-            East
-          </ToggleButton>
-          <ToggleButton
-            active={conference === "West"}
-            onClick={() => setConference("West")}
-          >
-            West
-          </ToggleButton>
-        </div>
-        <div className="flex gap-2 border-b border-zinc-200 p-3">
-          <ToggleButton
-            active={positionGroup === "Forwards"}
-            onClick={() => setPositionGroup("Forwards")}
-          >
-            Forwards
-          </ToggleButton>
-          <ToggleButton
-            active={positionGroup === "Defence"}
-            onClick={() => setPositionGroup("Defence")}
-          >
-            Defence
-          </ToggleButton>
-          <ToggleButton
-            active={positionGroup === "Goalies"}
-            onClick={() => setPositionGroup("Goalies")}
-          >
-            Goalies
-          </ToggleButton>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed border-collapse text-sm">
-            <colgroup>
-              <col className="w-12" />
-              <col />
-              <col className="w-[3.25rem]" />
-              <col className="w-[3.25rem]" />
-              <col className="w-[3.25rem]" />
-              <col className="w-[3.25rem]" />
-            </colgroup>
-            <thead className="border-b border-zinc-200 bg-zinc-100">
-              <tr>
-                <SortTh
-                  label="Team"
-                  colKey="team"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-                <SortTh
-                  label="Player"
-                  colKey="name"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-                <SortTh
-                  label="R1"
-                  colKey="r1"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  alignRight
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-                <SortTh
-                  label="R2"
-                  colKey="r2"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  alignRight
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-                <SortTh
-                  label="P"
-                  colKey="p"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  alignRight
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-                <SortTh
-                  label="$"
-                  colKey="salary"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  alignRight
-                  onSort={onSortHeader}
-                  disabled={submissionsLocked}
-                />
-              </tr>
-            </thead>
-            <tbody
-              className={submissionsLocked ? "pointer-events-none opacity-50" : ""}
+      <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_0.7fr] lg:items-stretch">
+        <section
+          aria-label="Picker"
+          className="flex h-[min(470px,60dvh)] min-h-0 flex-col overflow-hidden rounded-md border border-zinc-200 bg-white lg:min-h-0"
+          style={
+            picksColumnPx != null
+              ? { height: picksColumnPx, maxHeight: picksColumnPx }
+              : undefined
+          }
+        >
+          <div className="flex shrink-0 gap-2 border-b border-zinc-200 p-3">
+            <ToggleButton
+              active={conference === "East"}
+              onClick={() => setConference("East")}
             >
-              {players.length ? (
-                players.map((p) => {
-                  const hex = teamPrimaryHex(p.team_abbrev);
-                  return (
-                    <tr
-                      key={p.nhl_id}
-                      className={[
-                        "border-b border-zinc-100",
-                        selectedIds.has(p.nhl_id)
-                          ? "bg-sky-100/70"
-                          : "hover:bg-zinc-50",
-                      ].join(" ")}
-                    >
-                      <td className="px-2 py-2">
-                        <span
-                          className="font-bold tabular-nums"
-                          style={hex ? { color: hex } : { color: "#18181b" }}
-                        >
-                          {p.team_abbrev}
-                        </span>
-                      </td>
-                      <td className="max-w-0 px-2 py-2 text-zinc-900">
-                        <button
-                          type="button"
-                          className="block w-full truncate text-left hover:underline"
-                          onClick={() => addPlayer(p)}
-                        >
-                          {p.name}
-                        </button>
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
-                        {p.stats?.r1 ?? 0}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
-                        {p.stats?.r2 ?? 0}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
-                        {p.stats?.total ?? 0}
-                      </td>
-                      <td className="px-2 py-2 text-right text-sm font-bold tabular-nums text-zinc-900">
-                        {Number(p.salary || 0)}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
+              East
+            </ToggleButton>
+            <ToggleButton
+              active={conference === "West"}
+              onClick={() => setConference("West")}
+            >
+              West
+            </ToggleButton>
+          </div>
+          <div className="flex shrink-0 gap-2 border-b border-zinc-200 p-3">
+            <ToggleButton
+              active={positionGroup === "Forwards"}
+              onClick={() => setPositionGroup("Forwards")}
+            >
+              Forwards
+            </ToggleButton>
+            <ToggleButton
+              active={positionGroup === "Defence"}
+              onClick={() => setPositionGroup("Defence")}
+            >
+              Defence
+            </ToggleButton>
+            <ToggleButton
+              active={positionGroup === "Goalies"}
+              onClick={() => setPositionGroup("Goalies")}
+            >
+              Goalies
+            </ToggleButton>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto">
+            <table className="w-full table-fixed border-collapse text-sm [&_td:last-child]:pr-3 [&_th:last-child]:pr-3">
+              <colgroup>
+                <col className="w-[8%]" />
+                <col className="w-[32%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+              <thead className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-100 shadow-[0_1px_0_rgba(0,0,0,0.06)]">
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-10 text-center text-xs text-zinc-500"
-                  >
+                  <SortTh
+                    label="Team"
+                    colKey="team"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    arrowAfterLabel
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="Player"
+                    colKey="name"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    arrowAfterLabel
+                    labelTruncate
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="Season"
+                    colKey="season"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="R1"
+                    colKey="r1"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="R2"
+                    colKey="r2"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="R3+4"
+                    colKey="r34"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="T"
+                    colKey="t"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                  <SortTh
+                    label="$"
+                    colKey="salary"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    alignRight
+                    onSort={onSortHeader}
+                    disabled={submissionsLocked}
+                  />
+                </tr>
+              </thead>
+              <tbody
+                className={
+                  submissionsLocked ? "pointer-events-none opacity-50" : ""
+                }
+              >
+                {players.length ? (
+                  players.map((p) => {
+                    const hex = teamPrimaryHex(p.team_abbrev);
+                    const r34 =
+                      Number(p.stats?.r3 ?? 0) + Number(p.stats?.r4 ?? 0);
+                    return (
+                      <tr
+                        key={p.nhl_id}
+                        className={[
+                          "border-b border-zinc-100",
+                          selectedIds.has(p.nhl_id)
+                            ? "bg-sky-100/70"
+                            : "hover:bg-zinc-50",
+                        ].join(" ")}
+                      >
+                        <td className="px-2 py-2">
+                          <span
+                            className="font-bold tabular-nums"
+                            style={hex ? { color: hex } : { color: "#18181b" }}
+                          >
+                            {p.team_abbrev}
+                          </span>
+                        </td>
+                        <td className="max-w-0 px-2 py-2 text-zinc-900">
+                          <button
+                            type="button"
+                            className="block w-full truncate text-left hover:underline"
+                            onClick={() => addPlayer(p)}
+                          >
+                            {p.name}
+                          </button>
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                          {Number(p.season_points ?? 0)}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                          {p.stats?.r1 ?? 0}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                          {p.stats?.r2 ?? 0}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                          {r34}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-zinc-900">
+                          {p.stats?.total ?? 0}
+                        </td>
+                        <td className="px-2 py-2 text-right text-sm font-bold tabular-nums text-zinc-900">
+                          {Number(p.salary || 0)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-3 py-10 text-center text-xs text-zinc-500"
+                    >
                     {!season ? (
                       <>Sync players in Admin after setting the playoff year.</>
                     ) : (pickerMeta?.totalInPicker ?? 0) === 0 ? (
@@ -609,16 +687,18 @@ export default function PicksClient({
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
-      </div>
+            </table>
+          </div>
+        </section>
 
-      <div
-        className={[
-          "space-y-4",
-          submissionsLocked ? "pointer-events-none opacity-50" : "",
-        ].join(" ")}
-      >
+        <section
+          ref={picksRef}
+          aria-label="Picks"
+          className={[
+            "w-full min-w-0 space-y-4 lg:w-full lg:self-start",
+            submissionsLocked ? "pointer-events-none opacity-50" : "",
+          ].join(" ")}
+        >
         {[
           ["East", "Forwards"],
           ["East", "Defence"],
@@ -632,20 +712,20 @@ export default function PicksClient({
           const slots = Array.from({ length: max }, (_, i) => cur[i] ?? null);
 
           return (
-            <div key={`${conf}-${group}`}>
-              <div className="text-xs font-semibold text-zinc-900">
+            <div key={`${conf}-${group}`} className="w-full min-w-0">
+              <div className="text-xs font-black text-zinc-900">
                 {conf} {group === "Goalies" ? "Goalie" : group}
               </div>
-              <div className="mt-1 space-y-1">
+              <div className="mt-1 w-full min-w-0 space-y-2">
                 {slots.map((slot, idx) =>
                   slot ? (
                     <div
                       key={slot.nhl_id}
-                      className="flex items-center gap-2 rounded bg-zinc-200/80 px-3 py-2 text-xs text-zinc-800"
+                      className={`${PICK_CHIP_GRID} bg-zinc-200/80 text-zinc-900`}
                     >
                       <button
                         type="button"
-                        className="flex h-8 w-8 shrink-0 items-center justify-center text-lg leading-none disabled:opacity-50"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-lg leading-none disabled:opacity-50"
                         onClick={() => toggleStar(conf, group, slot.nhl_id)}
                         aria-label={
                           stars[group] === slot.nhl_id
@@ -663,9 +743,9 @@ export default function PicksClient({
                           </span>
                         )}
                       </button>
-                      <span className="min-w-0 flex-1 truncate">
+                      <span className="flex min-h-0 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
                         <span
-                          className="font-bold"
+                          className="shrink-0 font-bold tabular-nums"
                           style={
                             teamPrimaryHex(slot.team_abbrev)
                               ? { color: teamPrimaryHex(slot.team_abbrev) }
@@ -673,15 +753,15 @@ export default function PicksClient({
                           }
                         >
                           {slot.team_abbrev}
-                        </span>{" "}
-                        {slot.name}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{slot.name}</span>
                       </span>
-                      <span className="shrink-0 tabular-nums font-semibold">
+                      <span className="shrink-0 text-right text-sm font-bold tabular-nums whitespace-nowrap">
                         {Number(slot.salary || 0)}
                       </span>
                       <button
                         type="button"
-                        className="shrink-0 px-1 py-0.5 text-2xl font-light leading-none text-red-600 hover:text-red-700"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-sm leading-none text-red-600 hover:bg-red-50 hover:text-red-700"
                         onClick={() => removePlayer(conf, group, slot.nhl_id)}
                         aria-label="Remove player"
                       >
@@ -691,9 +771,29 @@ export default function PicksClient({
                   ) : (
                     <div
                       key={`${conf}-${group}-${idx}`}
-                      className="rounded bg-zinc-200/80 px-3 py-2 text-center text-xs text-zinc-500"
+                      className={`${PICK_CHIP_GRID} bg-transparent text-zinc-500`}
                     >
-                      Empty Slot
+                      <svg
+                        className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-visible text-zinc-400"
+                        aria-hidden
+                      >
+                        <rect
+                          x="1.5%"
+                          y="1.5%"
+                          width="97%"
+                          height="97%"
+                          rx="8"
+                          ry="8"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                          style={{ strokeDasharray: "5px 5px" }}
+                        />
+                      </svg>
+                      <div className="relative z-[1] col-span-4 col-start-1 row-start-1 flex h-full min-h-0 w-full items-center justify-center whitespace-nowrap text-center">
+                        Empty Slot
+                      </div>
                     </div>
                   )
                 )}
@@ -764,7 +864,7 @@ export default function PicksClient({
             {submitState.message}
           </div>
         ) : null}
-      </div>
+        </section>
     </div>
     </div>
   );

@@ -16,6 +16,7 @@ import {
   fetchPoolSettings,
   isSubmissionsLockedForRound,
 } from "@/lib/pool-settings";
+import { notFound } from "next/navigation";
 import DeadlineAtForViewer from "./DeadlineAtForViewer";
 import PicksClient from "./ui";
 
@@ -27,17 +28,20 @@ function poolRoundTitle(r) {
 
 export default async function PicksPage({ params }) {
   const { pick_page_id } = await params;
+  const raw = String(pick_page_id ?? "");
+  /** Pick codes are exactly six digits; reject e.g. `/picks/1234567` or non-numeric slugs. */
+  if (!/^\d{6}$/.test(raw)) {
+    notFound();
+  }
 
   const supabase = createServerSupabaseClient();
-  const pickPageId = Number(pick_page_id);
+  const pickPageId = Number(raw);
 
-  const { data: participant } = Number.isFinite(pickPageId)
-    ? await supabase
-        .from("participants")
-        .select("id,name,slug,pick_page_id")
-        .eq("pick_page_id", pickPageId)
-        .maybeSingle()
-    : { data: null };
+  const { data: participant } = await supabase
+    .from("participants")
+    .select("id,name,slug,pick_page_id")
+    .eq("pick_page_id", pickPageId)
+    .maybeSingle();
 
   const { data: seasonRows } = await supabase
     .from("players")
@@ -206,7 +210,7 @@ export default async function PicksPage({ params }) {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-12">
       <div className="w-full max-w-6xl">
-        <h1 className="font-display text-center text-[32px] leading-[1.0] font-bold text-[#163a59]">
+        <h1 className="text-center text-[32px] leading-[1.0] font-black text-[#163a59]">
           {participant?.name?.trim() || `Pick page ${pick_page_id}`}
         </h1>
 
@@ -241,12 +245,6 @@ export default async function PicksPage({ params }) {
             eligibleTeamAbbrevsSorted,
           }}
         />
-
-        <div className="mt-10 text-center text-xs text-zinc-700">
-          🔄 refresh the page to confirm you team below
-          <br />
-          📸 then screenshot your team and send it to the Chill Commish
-        </div>
       </div>
     </main>
   );

@@ -4,6 +4,11 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
+function trimText(v) {
+  const t = String(v ?? "").trim();
+  return t.length ? t : null;
+}
+
 function normalizeParticipantRow(row) {
   const name = (row.name || row.Name || "").trim();
   if (!name) return null;
@@ -14,10 +19,17 @@ function normalizeParticipantRow(row) {
   const providedSlug = (row.slug || row.Slug || "").trim();
   const slug = providedSlug || slugify(name);
 
+  const location = trimText(row.location || row.Location);
+  const fav = trimText(row.fav || row.Fav);
+  const linkedin = trimText(row.linkedin || row.LinkedIn || row.linked_in);
+
   return {
     name,
     slug,
     pick_page_id,
+    location,
+    fav,
+    linkedin,
   };
 }
 
@@ -30,7 +42,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("participants")
       .upsert(participants, { onConflict: "pick_page_id" })
-      .select("id,name,slug,pick_page_id");
+      .select("id,name,slug,pick_page_id,location,fav,linkedin");
 
     if (error) {
       return Response.json(

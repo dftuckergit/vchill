@@ -1,290 +1,241 @@
 @AGENTS.md
 
-# VChill Fantasy Hockey Pool — Project Knowledge Base
+# V Chill Pool — agent onboarding
 
-Handoff doc for agents: **concrete paths, APIs, env vars, and Supabase shapes**. Verify behavior in code if something drifts.
-
-## What this project is
-
-Annual fantasy **NHL playoff** pool (“V Chill Pool”). Participants get `/picks/[pick_page_id]`, submit a **12-player** roster (East/West, salary cap, stars) per **pool** round; points from synced NHL playoff stats. UI should stay close to existing Framer look (`Work_Sans`, header `#163a59`).
-
-## Tech stack (verified `package.json`)
-
-- **Next.js** `16.2.2` — App Router, **JavaScript only** (`jsconfig.json` alias `@/*`)
-- **React** `19.2.4`
-- **Supabase** `@supabase/supabase-js` `^2.102.1`
-- **Tailwind** `^4` — `app/globals.css`, PostCSS
-- **NHL HTTP API** — `https://api-web.nhle.com/v1/` via `lib/nhl/api.js` (`nhlFetch`, 429 backoff)
-- **Participants** — Google Sheet CSV URL `PARTICIPANTS_SHEET_URL` (`lib/participants/sheet.js`)
+Living doc: **verify in repo** if behavior drifts. Paths from repo root `vchill-pool/`.
 
 ---
 
-## 1. Session summary (high signal)
+## 1. Product snapshot
 
-- **Playoff bracket = team allowlist** for `GET /api/sync-players`, Admin eligible teams, and `GET /api/playoff-teams`. Logic: `lib/nhl/playoff-bracket-teams.js`; season math: `lib/nhl/season.js` (`playoffYearToSeasonId`, `seasonIdToPlayoffYear`).
-- **`PUT /api/pool-settings`** intersects `eligible_teams_r1`–`r3` with bracket teams; bracket failure → **502**. **`GET /api/pool-settings`** returns normalized rows only (stale non-playoff codes possible until next Save).
-- **Season id as string:** `picks`, `pool_settings`, and `.eq("season", …)` use **8-digit text** (e.g. `20242025`). `app/picks/[pick_page_id]/page.jsx`, `app/standings/page.jsx`, `app/teams/[slug]/page.jsx` coerce `players.season` with `String(…)`; `lib/pool-settings.js` `fetchPoolSettings` stringifies the lookup key.
-- **Picks page reliability:** `export const dynamic = "force-dynamic"` in `app/picks/[pick_page_id]/page.jsx`. Saved rows for **pool rounds 1–2** use the full query result (legacy bug had filtered to NHL rounds 3/4 only). Saved roster still shown when deadline passed (`showSavedRoster`); edits gated in `app/picks/[pick_page_id]/ui.jsx`. **`useEffect` + `savedIdsKey`** re-hydrates roster/stars when server saved IDs or lock state change (e.g. after `router.refresh()` post-submit).
-- **Pool settings — stats sync defaults:** `pool_settings.stats_sync_limit` (clamped **1–100**, default **8**), `stats_sync_concurrency` (**1–10**, default **1**). Normalized in `lib/pool-settings.js`; persisted via **`PUT /api/pool-settings`** (omit keys → keep existing). Admin: presets + inputs in `app/admin/ui.jsx`; saved with **Save pool settings**. New DBs: `sql/pool_settings.sql`. Existing DBs: run **`sql/pool_settings_stats_sync_defaults.sql`** once in Supabase SQL Editor.
-- **`GET /api/sync-stats` auth:** If **`SYNC_STATS_SECRET`** is set → require `Authorization: Bearer …`, or `x-sync-stats-secret`, or **`x-admin-password`** matching **`ADMIN_PASSWORD`**. If secret unset → route open. **`export const maxDuration = 60`** here and on other sync `GET` routes: `app/api/sync-players/route.js`, `app/api/sync-regular-season/route.js`, `app/api/sync-participants/route.js`.
-- **Admin `run()`** (`app/admin/ui.jsx`): all sync **`GET`**s send **`x-admin-password`** when the password field is filled (so stats sync works when `SYNC_STATS_SECRET` is enabled).
-- **GitHub Actions:** `.github/workflows/sync-playoff-stats.yml` chains `GET /api/sync-stats` with `offset` / `next_offset` until done. Repo secrets: **`STATS_SYNC_BASE_URL`**, **`SYNC_STATS_SECRET`**. Workflow **defaults** for `limit`/`concurrency` (**8** / **1**) are **not** read from `pool_settings` (change workflow or dispatch inputs to align with Admin).
-- **`POST /api/picks/submit`:** Validates `pool_settings.current_round`, deadline, eligible teams, `lib/pick-roster-rules.js`. Pool round **3** deletes `.in("round", [3, 4])` then inserts **`round: 3`**.
-- **Scoring / public pages:** `lib/scoring.js`; `/standings`, `/teams/[slug]`; team page loads all picks for summary (no r3/r4 display bug).
+**What it is:** Casual **NHL playoff** pool: each **pool round** (1–3), participants submit a **12-player** roster (East/West, salary cap, **stars**). Points come from **NHL stats** stored in Supabase. A commissioner syncs data and **pool settings** in **Admin**; players open **Make picks** with a numeric pick code, build a roster on **`/picks/[pick_page_id]`**, and view **standings** and **team** pages.
 
----
+**Journeys → routes / owners**
 
-## 2. New / modified files (one-line purpose)
-
-| Path | Purpose |
-|------|---------|
-| `app/api/playoff-teams/route.js` | `GET ?year=` → `{ ok, year, season, teams: [{ abbrev, name }] }`; `year` required, ≥ 2000 |
-| `app/api/sync-players/route.js` | `GET ?year=` → bracket-only roster → `players`; `maxDuration` 60 |
-| `app/api/sync-stats/route.js` | `GET` batched playoff game logs → `stats`; optional auth; `maxDuration` 60 |
-| `app/api/sync-regular-season/route.js` | `GET` → `players.season_points`; `maxDuration` 60 |
-| `app/api/sync-participants/route.js` | `GET` → Sheet → `participants` upsert; `maxDuration` 60 |
-| `app/api/pool-settings/route.js` | `GET` / `PUT` `pool_settings`; PUT bracket-intersection + stats sync fields |
-| `app/api/picks/submit/route.js` | `POST` validate + replace picks for participant/season/round |
-| `app/api/team-summary/route.js` | `GET ?participant_id=&season=` → scoring summary JSON |
-| `app/admin/page.jsx` | Server shell for Admin |
-| `app/admin/ui.jsx` | Admin client: sync buttons, pool form, eligible UI, stats limit/concurrency + presets |
-| `app/picks/[pick_page_id]/page.jsx` | RSC picks page: `dynamic`, season string, saved picks, `pickerMeta` |
-| `app/picks/[pick_page_id]/ui.jsx` | Client picker, submit, `savedIdsKey` re-hydration |
-| `app/picks/[pick_page_id]/DeadlineAtForViewer.jsx` | Client deadline display |
-| `app/standings/page.jsx` | Standings table; `String(season)` |
-| `app/teams/[slug]/page.jsx` | Team page; `String(season)` |
-| `app/_components/SiteHeader.jsx` | Nav; Teams from `participants` |
-| `lib/nhl/playoff-bracket-teams.js` | Bracket parse, `fetchPlayoffTeamsMap`, eligible restriction |
-| `lib/nhl/season.js` | Playoff year ↔ 8-digit season id |
-| `lib/nhl/api.js` | `nhlFetch`, 429 backoff |
-| `lib/nhl/team-conference.js` | Conference normalization for picks |
-| `lib/nhl/team-abbrevs.js` | 32-team list (not used by Admin eligible UI) |
-| `lib/pool-settings.js` | `fetchPoolSettings`, `normalizePoolSettingsRow`, `mergeStatsSyncFromPut`, deadlines/locks |
-| `lib/playoff-pick-eligibility.js` | Eligible team sets + player filter |
-| `lib/pick-roster-rules.js` | `PICK_SALARY_CAP`, roster validation |
-| `lib/participants/sheet.js` | CSV fetch; `requireEnv("PARTICIPANTS_SHEET_URL")` |
-| `lib/deadline-timezone.js` | Eastern ↔ UTC for admin inputs |
-| `lib/scoring.js` | Standings + participant summaries |
-| `lib/supabase/server.js` | Server Supabase client; `requireEnv` URL + publishable key |
-| `lib/supabase/browser.js` | Browser client |
-| `lib/env.js` | `requireEnv` |
-| `lib/slugify.js` | Participant slug helper |
-| `sql/pool_settings.sql` | `CREATE TABLE pool_settings` including `stats_sync_*` |
-| `sql/pool_settings_eligible_teams.sql` | `ALTER` if table predates eligible arrays |
-| `sql/pool_settings_stats_sync_defaults.sql` | `ALTER` if table predates `stats_sync_limit` / `stats_sync_concurrency` |
-| `.github/workflows/sync-playoff-stats.yml` | Scheduled + manual chained `sync-stats` |
+| Journey | Route(s) | Primary files |
+|--------|----------|-----------------|
+| Home / join context | `/` | [`app/page.jsx`](app/page.jsx) |
+| Enter pick code | `/make-picks` | [`app/make-picks/page.jsx`](app/make-picks/page.jsx), [`app/make-picks/ui.jsx`](app/make-picks/ui.jsx) — **exactly 6 digits** (input capped); then **`GET /api/check-pick-page?pick_page_id=`** must succeed before navigating to `/picks/…` |
+| Build & submit roster | `/picks/[pick_page_id]` | [`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx), [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx), [`DeadlineAtForViewer.jsx`](app/picks/[pick_page_id]/DeadlineAtForViewer.jsx) |
+| Standings | `/standings` | [`app/standings/page.jsx`](app/standings/page.jsx), [`lib/scoring.js`](lib/scoring.js) |
+| Team bio + rounds + compare | `/teams/[slug]` | [`app/teams/[slug]/page.jsx`](app/teams/[slug]/page.jsx), [`TeamBio.jsx`](app/teams/[slug]/TeamBio.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) |
+| Commissioner | `/admin` | [`app/admin/page.jsx`](app/admin/page.jsx), [`app/admin/ui.jsx`](app/admin/ui.jsx) |
 
 ---
 
-## 3. Behavior changes (user-visible → files)
+## 2. Stack & conventions
 
-- **Eligible teams in Admin** = NHL playoff bracket only for selected year — `app/admin/ui.jsx`, `app/api/playoff-teams/route.js`.
-- **Save pool settings** may drop tri-codes not in bracket — `app/api/pool-settings/route.js` (`eligible_teams_removed_not_in_playoffs`).
-- **Sync players** only bracket teams — `app/api/sync-players/route.js`.
-- **Picks picker** filtered by `eligible_teams_r{current_pool_round}` when non-empty — `app/picks/[pick_page_id]/page.jsx`, `ui.jsx`, `lib/playoff-pick-eligibility.js`.
-- **One eligible list active** = **Current pool round** — copy in `app/admin/ui.jsx`, `app/picks/[pick_page_id]/ui.jsx`.
-- **Deadlines:** Admin Eastern; picks page viewer-local — `lib/deadline-timezone.js`, `DeadlineAtForViewer.jsx`.
-- **Saved picks visible** after submit / reload / new tab (incl. rounds 1–2 and after lock); roster read-only when locked — `app/picks/[pick_page_id]/page.jsx`, `ui.jsx`.
-- **Admin playoff stats:** limit/concurrency presets; values persist with **Save pool settings** — `app/admin/ui.jsx`, `PUT /api/pool-settings`.
+- **Next.js** `16.2.2`, **App Router**, **JavaScript only** — [`jsconfig.json`](jsconfig.json) path alias `@/*` (no `tsconfig`).
+- **React** `19.2.4`. **No** `"use server"` / Server Actions in `*.js` / `*.jsx` (grep clean); writes go through **`app/api/**/route.js`** handlers.
+- **Supabase** `@supabase/supabase-js` — [`lib/supabase/server.js`](lib/supabase/server.js) (RSC / route handlers), [`lib/supabase/browser.js`](lib/supabase/browser.js) (client if needed). Env via [`lib/env.js`](lib/env.js) `requireEnv`.
+- **Tailwind** v4 — [`app/globals.css`](app/globals.css) (`@import "tailwindcss"`). **Work Sans** in [`app/layout.jsx`](app/layout.jsx) (`400,600,700,900`); semantic **`h1`–`h6`** heavy weight in globals; **navy** `#163a59` / `#193b5a` in UI; team tri-code colors [`lib/nhl/team-primary-colors.js`](lib/nhl/team-primary-colors.js).
+- **NHL HTTP** — `https://api-web.nhle.com/v1/` in [`lib/nhl/api.js`](lib/nhl/api.js) (`nhlFetch`, 429 backoff).
+- **Participants CSV** — [`lib/participants/sheet.js`](lib/participants/sheet.js) + env `PARTICIPANTS_SHEET_URL`.
+
+**Where code lives**
+
+- **Routes & layouts:** `app/` — RSC by default; **`"use client"`** on picker, admin UI, team compare UI, teams menu, etc.
+- **Shared chrome:** [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx), [`app/_components/TeamsMenuClient.jsx`](app/_components/TeamsMenuClient.jsx).
+- **Domain logic:** `lib/` (scoring, pool settings, pick rules, NHL, eligibility, [`lib/roster-slot-order.js`](lib/roster-slot-order.js) for team table slot order aligned with picks UI).
+
+**Next.js 16** — short pointer in [`AGENTS.md`](AGENTS.md) (read `node_modules/next/dist/docs/` if APIs surprise you).
 
 ---
 
-## 4. API endpoints
+## 3. Local dev & verification
 
-Common error shapes: `{ ok: false, error: string }` or `{ ok: false, step: string, error: string }`.
+**Scripts** ([`package.json`](package.json))
 
-### `GET /api/sync-participants`
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | `next dev` (local app, default port 3000) |
+| `npm run build` | Production build |
+| `npm run start` | Serve `.next` after `build` |
+| `npm run lint` | ESLint |
+| `npm run seed:demo-picks -- --slug-a=… --slug-b=…` | Dev-only: seed two participants’ picks (see [`scripts/seed-demo-picks.mjs`](scripts/seed-demo-picks.mjs)); needs Node **20+** `node --env-file=.env.local` pattern (script header) |
+| `npm run reset:season-picks` | Clears **all** `picks` for resolved/latest season; sets `pool_settings.current_round` to **1** if a row exists ([`scripts/reset-season-picks.mjs`](scripts/reset-season-picks.mjs)) |
 
-- **Query:** none  
-- **Side effects:** Reads CSV from `PARTICIPANTS_SHEET_URL`; upsert `participants` `onConflict: "pick_page_id"`  
-- **Success:** `{ ok: true, count, participants }` (`participants` = selected rows from upsert)  
-- **Failures:** `500` — missing env, sheet error, or Supabase upsert (needs unique `pick_page_id`)
+**Smoke (manual)**
 
-### `GET /api/sync-players?year={number}`
+- `http://localhost:3000` — home + header nav.
+- `/make-picks` — six-digit codes only (extra digits stripped); unknown code → error under button, no navigation. Valid code → **`GET /api/check-pick-page`** → `/picks/{id}`.
+- `/picks/123456` — dynamic segment must match **`/^\d{6}$/`** or **`notFound()`** ([`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx)) (e.g. `/picks/1234567` is 404).
+- `/standings`, `/teams/[slug]`, `/admin` — need env + data; watch **terminal** (RSC / server logs) and **browser Network** for `/api/*`.
+- **Supabase dashboard** — Table Editor / logs for failed writes or RLS.
 
-- **Query:** `year` optional, default **`2025`** → internal `season` = `playoffYearToSeasonId(year)`  
-- **Side effects:** `DELETE` `players` where `season`; insert roster rows from bracket + NHL `/roster/{abbrev}/{season}`  
-- **Success:** `{ ok: true, year, season, teams, players, conferenceCounts, upserted }` — `teams` / `players` are **counts**; `upserted` = inserted row count from select  
-- **Failures:** empty bracket, NHL errors, Supabase errors
+**Automated tests**
 
-### `GET /api/playoff-teams?year={number}`
+- **None** — no Jest/Vitest/Playwright config and no `*.test.*` / `*.spec.*` files. QA: **manual** + `npm run lint` + `npm run build`.
 
-- **Query:** **`year` required**, numeric **≥ 2000**  
-- **Side effects:** none  
-- **Success:** `{ ok: true, year, season, teams: [{ abbrev, name }] }`  
-- **Failures:** `400` missing/invalid year; `502` NHL/bracket error
+---
 
-### `GET /api/sync-stats?year=&limit=&offset=&concurrency=`
+## 4. Environment variables
 
-- **Query:** `year` default `2025`; `offset` default `0`; `limit` optional (omit = all players from `offset` to end); `concurrency` optional, default **2**, clamped **1–10**  
-- **Auth:** If **`SYNC_STATS_SECRET`** set: **`Authorization: Bearer <secret>`** or **`x-sync-stats-secret`** or **`x-admin-password: <ADMIN_PASSWORD>`**. If unset, no auth.  
-- **Side effects:** If **`offset === 0`**, `DELETE` from `stats` where `season`; goalie column names via probe insert; per-player NHL `/player/{nhl_id}/game-log/{season}/3`  
-- **Success:** `{ ok: true, year, season, offset, limit, concurrency, total_players, next_offset, players, stats_rows }`  
-- **Completion:** repeat calls until **`next_offset >= total_players`**  
-- **Failures:** **`401`** `{ ok: false, error: "Unauthorized" }` if secret required and missing/wrong; `500` NHL/insert errors; 429 handled inside `nhlFetch`
+| Name | Required? | Read in | Purpose |
+|------|-----------|---------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes (boot) | [`lib/supabase/server.js`](lib/supabase/server.js), [`lib/supabase/browser.js`](lib/supabase/browser.js) | Supabase URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` | Yes | same | Publishable key (name is **not** `ANON_KEY`) |
+| `PARTICIPANTS_SHEET_URL` | For sheet sync | [`lib/participants/sheet.js`](lib/participants/sheet.js) | Public CSV URL for participant sync |
+| `ADMIN_PASSWORD` | For protected admin APIs | [`app/api/pool-settings/route.js`](app/api/pool-settings/route.js), [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) | `PUT /api/pool-settings` returns **503** if unset; stats auth when `SYNC_STATS_SECRET` is set |
+| `SYNC_STATS_SECRET` | Optional | [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) | If set, `GET /api/sync-stats` requires Bearer / `x-sync-stats-secret` / matching `x-admin-password` |
+| `NEXT_PUBLIC_SITE_URL` | Optional | [`app/layout.jsx`](app/layout.jsx) | `metadataBase` for OG/Twitter |
+| `VERCEL_URL` | On Vercel | [`app/layout.jsx`](app/layout.jsx) | Fallback host for `metadataBase` |
 
-### `GET /api/sync-regular-season?year=&limit=&offset=&concurrency=`
+**GitHub Actions** — repo secrets `STATS_SYNC_BASE_URL`, `SYNC_STATS_SECRET`: [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml).
 
-- **Query:** `year` default **`2025`**; `limit` default **25**; `offset` default **0**; `concurrency` default **1**, clamped **1–3**  
-- **Side effects:** Updates `players.season_points` (`onConflict: "id"`)  
-- **Success:** `{ ok: true, year, season, offset, limit, concurrency, updated }` — `updated` = rows in batch  
-- **Failures:** missing column hints in JSON, NHL/Supabase errors
-
-### `GET /api/pool-settings?season={string}`
-
-- **Query:** **`season` required** (8-digit string e.g. `20242025`)  
-- **Side effects:** none  
-- **Success:** `{ ok: true, settings }` where `settings` includes `current_round`, `deadline_r1`–`r3`, `eligible_teams_r1`–`r3`, **`stats_sync_limit`**, **`stats_sync_concurrency`**, `updated_at` (via `lib/pool-settings.js` normalization)  
-- **Failures:** `400` missing `season`; `500` Supabase
-
-### `PUT /api/pool-settings`
-
-- **Auth:** **`ADMIN_PASSWORD`** required in env; client sends **`x-admin-password`** header or body **`admin_password`**  
-- **Body:** **`season`**, **`current_round`** (1–3), **`deadline_r1`–`r3`** (ISO strings or null). **`eligible_teams_r1`–`r3`**: arrays or null — **omit key** → keep existing for that key. Deadlines **always** taken from body (missing → null). Optional **`stats_sync_limit`** (1–100), **`stats_sync_concurrency`** (1–10) — **omit** → keep existing.  
-- **Side effects:** Upsert row; eligible arrays intersected with playoff bracket  
-- **Success:** `{ ok: true, settings }` + optional **`eligible_teams_removed_not_in_playoffs: string[]`**  
-- **Failures:** `503` if `ADMIN_PASSWORD` unset; `401`; `400`; `502` bracket; `500` upsert
-
-### `POST /api/picks/submit`
-
-- **Body:** **`pick_page_id`** (number), **`season`** (string), **`round`** (pool 1|2|3), **`roster`** (length-12 NHL id array), **`stars`** `{ Forwards, Defence, Goalies }` (NHL ids)  
-- **Side effects:** Validates round vs `pool_settings`, deadline, eligible teams, roster rules; delete prior picks for that participant+season (round 3 uses `.in("round", [3, 4])`); insert 12 rows  
-- **Success:** `{ ok: true, participant_id, season, round, picks: 12, submitted_at }`  
-- **Failures:** `400` validation; `403` wrong round / locked; `404` participant; `500` + `step`
-
-### `GET /api/team-summary?participant_id=&season=`
-
-- **Query:** both required; `participant_id` numeric; `season` string  
-- **Side effects:** none  
-- **Success:** `{ ok: true, summary }` from `computeParticipantSummary`  
-- **Failures:** `400` bad ids; `404` participant; `500` + `step`
+Do **not** commit `.env*`.
 
 ---
 
 ## 5. Data model / Supabase
 
-**RLS:** No policies in repo `sql/`; confirm in Supabase dashboard.
+**RLS:** No policy SQL in repo ([`sql/`](sql/)). Assume **RLS off** or policies maintained in the Supabase dashboard.
 
-| Table | Columns / usage |
-|-------|------------------|
-| `participants` | `id`, `name`, `slug`, `pick_page_id` — upsert on **`pick_page_id`** (unique) |
-| `players` | `id`, `nhl_id`, `name`, `team`, `team_abbrev`, `position` (`F`/`D`/`G`), `conference`, `salary`, `season`, `season_points` |
-| `picks` | `participant_id`, `player_id`, `round` (pool **1–3** in app), `season` (text), `is_star`, `submitted_at` |
-| `stats` | `nhl_id`, `season`, `round` (NHL **1–4**), `goals`, `assists`, + goalie columns (see below) |
-| `pool_settings` | **PK** `season` (text); `current_round` 1–3; `deadline_r1`–`r3` timestamptz; `eligible_teams_r1`–`r3` `text[]` null; **`stats_sync_limit`** int default 8; **`stats_sync_concurrency`** int default 1; `updated_at` |
+**Tables (from code)**
 
-**Stats goalie column detection** (`app/api/sync-stats/route.js`): probe insert tries wins (`goalie_wins` \| `goalieWins` \| `wins`) and shutouts (`goalie_shutout` \| `goalie_shutouts` \| `shutouts`).
+| Table | Columns / usage (representative) |
+|-------|----------------------------------|
+| `participants` | `id`, `name`, `slug`, `pick_page_id` (unique), `location`, `fav`, `linkedin` — sheet sync [`app/api/sync-participants/route.js`](app/api/sync-participants/route.js); team page [`app/teams/[slug]/page.jsx`](app/teams/[slug]/page.jsx), bio [`TeamBio.jsx`](app/teams/[slug]/TeamBio.jsx). Upsert `onConflict: pick_page_id`. |
+| `players` | `id`, `nhl_id`, `name`, `team`, `team_abbrev`, `position`, `conference`, `salary`, `season`, `season_points` — sync, picker, picks FK. |
+| `picks` | `participant_id`, `player_id`, `round` (pool **1–3**; legacy **4** → pool 3 in [`lib/scoring.js`](lib/scoring.js)), `season` (**text** 8-digit), `is_star`, `submitted_at`. |
+| `stats` | `nhl_id`, `season`, `round` (NHL **1–4**), goals/assists + goalie fields (column names probed in sync-stats). |
+| `pool_settings` | PK `season`; `current_round` 1–3; `deadline_r1`–`deadline_r3`; `eligible_teams_r1`–`r3` (`text[]`); `stats_sync_limit`, `stats_sync_concurrency`; `updated_at` — [`lib/pool-settings.js`](lib/pool-settings.js), Admin + submit validation. |
 
-**Playoff game id** (`sync-stats` `parseRoundFromGameId`): length 10, chars 4–6 = `03`, round = digits 6–8.
+**Season** — string everywhere (e.g. `20242025`) for `picks`, `pool_settings`, `.eq("season", …)`.
 
----
+**SQL helpers (no `supabase/` migrations folder)** — run in Supabase SQL editor as needed:
 
-## 6. Environment variables
+- [`sql/pool_settings.sql`](sql/pool_settings.sql), [`sql/pool_settings_eligible_teams.sql`](sql/pool_settings_eligible_teams.sql), [`sql/pool_settings_stats_sync_defaults.sql`](sql/pool_settings_stats_sync_defaults.sql), [`sql/participants_bio_columns.sql`](sql/participants_bio_columns.sql)
 
-| Variable | Read in | Role |
-|----------|---------|------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/server.js`, `lib/supabase/browser.js` | Required (`requireEnv`) |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` | same | Required (name is **not** `ANON_KEY`) |
-| `PARTICIPANTS_SHEET_URL` | `lib/participants/sheet.js` | Required for `GET /api/sync-participants` |
-| `ADMIN_PASSWORD` | `app/api/pool-settings/route.js` (`PUT`); `app/api/sync-stats/route.js` (bypass when `SYNC_STATS_SECRET` set) | Pool **`PUT`** → **503** if unset; stats auth accepts `x-admin-password` when secret enabled |
-| `SYNC_STATS_SECRET` | `app/api/sync-stats/route.js` | Optional; if set, stats `GET` requires Bearer / `x-sync-stats-secret` / valid `x-admin-password` |
+**Gotchas**
 
-**Vercel:** Set production (and preview if needed) env vars to match local `.env.local` pattern (do not commit `.env*`).
-
-**GitHub Actions:** Repository secrets **`STATS_SYNC_BASE_URL`** (origin only, e.g. `https://vchill.vercel.app`), **`SYNC_STATS_SECRET`** (same value as Vercel if route is locked).
+- `GET /api/sync-stats` with **`offset=0`** deletes all **`stats`** for that `season` before import.
+- Replacing **`players`** rows can invalidate **`picks.player_id`** FKs (ops).
 
 ---
 
-## 7. Operational notes
+## 6. API (Route Handlers only)
 
-- **Vercel Hobby:** Function **`maxDuration = 60`** on sync routes (see §2). Prefer **small `limit`** + **low `concurrency`** for `sync-stats` so each request finishes under the cap.  
-- **`sync-stats` first batch:** **`offset=0`** **deletes** all `stats` for that **`season`** before importing — full chained run is safe; a **single** batch after delete leaves partial data until the chain completes.  
-- **GitHub workflow:** `.github/workflows/sync-playoff-stats.yml` — `timeout-minutes: 360`, `concurrency: cancel-in-progress` on branch group. **Off-season:** disable workflow or remove `schedule` so daily `offset=0` does not run. **Defaults** `year=2025`, `limit=8`, `concurrency=1` in `workflow_dispatch`; scheduled runs use shell fallbacks when inputs empty.  
-- **Rate limits:** `nhlFetch` retries 429 (`lib/nhl/api.js`); stats fetches use `maxRetries: 8`, `baseDelayMs: 1500`.  
-- **Regular season sync:** advance **`offset`** until entire `players` list covered.  
-- **Pool year:** Admin playoff year must match `pool_settings.season` / synced `players.season` (`playoffYearToSeasonId`).  
-- **Schema migration:** Run **`sql/pool_settings_stats_sync_defaults.sql`** once if `pool_settings` predates `stats_sync_*` columns (otherwise Admin save / upsert errors).  
-- **Dev:** Hydration issues after HMR → delete `.next`, restart `npm run dev`. **`EMFILE`** on watcher → `npm run build && npm run start`.  
-- **Picks:** `PicksClient` **`key={`${currentPoolRound}-${submissionsLocked ? "locked" : "open"}`}`** resets client state on round/lock change (`app/picks/[pick_page_id]/page.jsx`).  
-- **Deadline / countdown:** `suppressHydrationWarning` where locale strings differ (`DeadlineAtForViewer.jsx`, `ui.jsx`).  
-- **Next.js:** See `AGENTS.md` / `node_modules/next/dist/docs/` for version-specific APIs.
+All handlers: `app/api/**/route.js`. **`export const maxDuration = 60`** on: [`sync-participants`](app/api/sync-participants/route.js), [`sync-players`](app/api/sync-players/route.js), [`sync-stats`](app/api/sync-stats/route.js), [`sync-regular-season`](app/api/sync-regular-season/route.js) — not on `check-pick-page`, `pool-settings`, `playoff-teams`, `picks/submit`, `team-summary`.
 
----
+Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 
-## 8. Project status
+| Method | Path | Auth | Query / body | Success / effects | Typical errors |
+|--------|------|------|----------------|-------------------|----------------|
+| `GET` | `/api/sync-participants` | None | — | Sheet → upsert `participants` | `500` (missing URL, sheet, DB) |
+| `GET` | `/api/sync-players` | None | `year` (default `2025`) | Replace `players` for derived `season` | `500` / empty data |
+| `GET` | `/api/playoff-teams` | None | **`year`** required | `{ ok, year, season, teams }` | `400`, `502` |
+| `GET` | `/api/sync-stats` | If `SYNC_STATS_SECRET`: Bearer / `x-sync-stats-secret` / `x-admin-password` | `year`, `limit`, `offset` (default `0`), `concurrency` (default **2**, clamp 1–10) | Batch stats; **`offset=0`** wipes `stats` for season | `401`, `500` |
+| `GET` | `/api/sync-regular-season` | None | `year`, `limit`, `offset`, `concurrency` (defaults in route) | Updates `players.season_points` | `500` |
+| `GET` | `/api/pool-settings` | None | **`season`** required | `{ ok, settings }` | `400`, `500` |
+| `PUT` | `/api/pool-settings` | `ADMIN_PASSWORD` via `x-admin-password` or body `admin_password` | JSON: `season`, `current_round`, deadlines, optional `eligible_teams_r*`, optional `stats_sync_*` | Upsert + eligible ∩ bracket | `503` (no password), `401`, `400`, `502`, `500` |
+| `POST` | `/api/picks/submit` | None (public) | JSON: `pick_page_id`, `season`, `round` (1–3), `roster` (12 NHL ids), `stars` | Validates deadlines, eligibility, [`lib/pick-roster-rules.js`](lib/pick-roster-rules.js); replaces round picks | `400`, `403`, `404`, `500` |
+| `GET` | `/api/team-summary` | None | **`participant_id`**, **`season`** | `{ ok, summary }` via [`computeParticipantSummary`](lib/scoring.js) | `400`, `404`, `500` |
+| `GET` | `/api/check-pick-page` | None | **`pick_page_id`** — string must match **`/^\d{6}$/`** (then queried as number) | `{ ok: true }` if `participants` row exists | **`400`** bad format; **`404`** not found; **`500`** DB |
 
-### Completed (major)
-
-- App Router: `/`, `/standings`, `/make-picks`, `/picks/[pick_page_id]`, `/teams/[slug]`, `/admin`  
-- NHL sync: participants, players (bracket-only), stats (batched), regular-season points  
-- Pool rounds, Eastern deadlines, bracket-aligned eligible teams, picks + server validation  
-- Scoring: pool R1 / R2 / R3+4 (`lib/scoring.js`)  
-- Vercel-oriented **`maxDuration`** on sync APIs  
-- Optional **`SYNC_STATS_SECRET`** + Admin **`x-admin-password`** on sync GETs  
-- **GitHub Actions** chained playoff stats sync  
-- **`pool_settings.stats_sync_*`** + Admin presets/persistence  
-
-### In progress / weak spots
-
-- Admin auth = single shared **`ADMIN_PASSWORD`** only  
-- **`GET /api/pool-settings`** may return pre-save eligible arrays not re-intersected with current bracket  
-
-### Known risks
-
-- NHL / Cloudflare throttling  
-- `stats` column name drift (mitigated by probe inserts in `sync-stats`)  
-- Playoff **bracket JSON** shape changes (`lib/nhl/playoff-bracket-teams.js`)  
-- **`player_id` on `picks`** invalid if `players` rows are replaced with new `id` values after a full re-sync (rare operational hazard)  
-
-### Next tasks (ordered, file pointers)
-
-1. **Optional:** Teach **`.github/workflows/sync-playoff-stats.yml`** to read **`stats_sync_limit` / `stats_sync_concurrency`** from **`GET /api/pool-settings?season=…`** (needs auth strategy) so automation matches Admin.  
-2. **Out of scope (by design):** prior-round pick history on picks page (team pages hold history).  
-3. **Out of scope (by design):** stronger admin auth than shared password.  
+[`app/admin/ui.jsx`](app/admin/ui.jsx) — sync buttons send `x-admin-password` when the password field is filled (needed when `SYNC_STATS_SECRET` is set for stats).
 
 ---
 
-## Routes (quick map)
+## 7. Frontend map
 
-| Path | Files |
-|------|--------|
-| `/` | `app/page.jsx` |
-| `/standings` | `app/standings/page.jsx`, `lib/scoring.js` |
-| `/teams/[slug]` | `app/teams/[slug]/page.jsx`, `ui.jsx` |
-| `/make-picks` | `app/make-picks/page.jsx`, `ui.jsx` |
-| `/picks/[pick_page_id]` | `app/picks/[pick_page_id]/page.jsx`, `ui.jsx`, `DeadlineAtForViewer.jsx` |
-| `/admin` | `app/admin/page.jsx`, `ui.jsx` |
+| Area | Files | Notes |
+|------|-------|--------|
+| Shell + SEO | [`app/layout.jsx`](app/layout.jsx), [`app/globals.css`](app/globals.css) | `SiteHeader`; `metadataBase`; icons / OG images under `app/` |
+| Home | [`app/page.jsx`](app/page.jsx) | Marketing |
+| Make picks | [`app/make-picks/page.jsx`](app/make-picks/page.jsx), [`ui.jsx`](app/make-picks/ui.jsx) | Digits-only input **max 6**; submit calls [`/api/check-pick-page`](app/api/check-pick-page/route.js) then `location` to `/picks/{code}`; inline error if missing/invalid |
+| Picks | [`page.jsx`](app/picks/[pick_page_id]/page.jsx) (`dynamic = "force-dynamic"`), [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx) | **`pick_page_id` param** must be **exactly six digits** or `notFound()`; sortable picker; roster chips; `savedIdsKey` / `useEffect` after `router.refresh()`; client `key` includes round + lock |
+| Standings | [`app/standings/page.jsx`](app/standings/page.jsx) | `computeStandingsRows` |
+| Teams | [`page.jsx`](app/teams/[slug]/page.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) | Rounds table + compare; compare calls `/api/team-summary`; slot order from [`lib/roster-slot-order.js`](lib/roster-slot-order.js) + [`lib/scoring.js`](lib/scoring.js) `computeParticipantSummary` |
+| Admin | [`app/admin/page.jsx`](app/admin/page.jsx), [`ui.jsx`](app/admin/ui.jsx) | Syncs, pool form, eligible teams, stats batch fields |
 
-**Header:** `app/_components/SiteHeader.jsx` — Teams menu from `participants`.
+**Gotchas**
 
----
-
-## Game rules (summary)
-
-- **Pool rounds:** 1 = NHL R1 stats; 2 = NHL R2; 3 = one window, points = NHL **R3 + R4** (`lib/scoring.js`).  
-- **Roster:** 12 players — 3F/2D/1G per conference (East + West); **`PICK_SALARY_CAP` = 30**; 3 stars (one per F/D/G group).  
-- **Scoring:** goal/assist 1 pt; goalie win 2, shutout 1; star doubles that pick’s points for the pool round.
+- Picks deadline UI: **`suppressHydrationWarning`** in [`DeadlineAtForViewer.jsx`](app/picks/[pick_page_id]/DeadlineAtForViewer.jsx) / picks [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx).
+- Dev: flaky HMR → delete `.next`, restart; **`EMFILE`** → `npm run build && npm run start`.
 
 ---
 
-## NHL API paths used in code
+## 8. Operational notes
 
-- `/playoff-bracket/{year}` — bracket teams  
-- `/standings/{yyyy-mm-dd}` — conference map for sync-players (`{year}-04-01`)  
-- `/roster/{abbrev}/{season}` — player rows  
-- `/player/{id}/game-log/{season}/3` — playoff log (stats sync)  
-- `/player/{id}/game-log/{season}/2` — regular season (`sync-regular-season`)
-
-Base: `https://api-web.nhle.com/v1/` (`lib/nhl/api.js`).
+- **Vercel:** `maxDuration` on long sync routes; keep **`sync-stats`** batches modest and concurrency low on Hobby.
+- **Workflow:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — chains `sync-stats` until done; **defaults `limit=8`, `concurrency=1`** (not read from `pool_settings`).
+- **Off-season:** avoid scheduled `offset=0` runs that wipe `stats`; disable workflow if unused.
+- **NHL:** [`lib/nhl/api.js`](lib/nhl/api.js); stats fetch **`maxRetries: 8`**, **`baseDelayMs: 1500`** in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js).
+- **Bracket / season:** Admin **year** must align with `pool_settings.season` and `players.season` ([`lib/nhl/season.js`](lib/nhl/season.js)).
+- **Stats schema drift:** probe insert in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js).
 
 ---
 
-## Code conventions
+## 9. Project status
 
-- JavaScript only; API routes: `app/api/*/route.js`; Tailwind (`app/globals.css`).
+**Stable (daily use)**
 
-## Commissioners notes
+- Participant sheet → Supabase; picks → standings / team pages; Admin NHL + pool config; optional GitHub stats workflow.
+- Team page: multi-round table, compare for current pool round, mobile vs desktop behavior in [`app/teams/[slug]/ui.jsx`](app/teams/[slug]/ui.jsx).
 
-- Commissioner: David Tucker (`dftucker@gmail.com`).  
-- Participants from Google Sheet; salaries edited in Supabase; casual friends-pool tone.  
-- Match Framer look where screenshots exist.
+**Forward work (typical)**
+
+- **UI polish** — home copy/spacing [`app/page.jsx`](app/page.jsx); small team/admin tweaks after manual QA.
+- **Production URLs** — set `NEXT_PUBLIC_SITE_URL` on Vercel; re-scrape OG debuggers.
+- **Workflow vs Admin** — optionally align workflow `limit`/`concurrency` with `pool_settings` (needs auth story for reading settings in CI).
+- **Sheet ↔ code** — CSV columns must match `normalizeParticipantRow` in [`app/api/sync-participants/route.js`](app/api/sync-participants/route.js).
+
+**Risks / product constraints**
+
+- Single shared **`ADMIN_PASSWORD`**.
+- `GET /api/pool-settings` eligible arrays may not re-intersect bracket until next **Save**.
+- NHL / Cloudflare throttling; bracket shape [`lib/nhl/playoff-bracket-teams.js`](lib/nhl/playoff-bracket-teams.js).
+
+**Open TODOs in code**
+
+- No systematic `TODO`/`FIXME` markers in `app/` / `lib/` (last grep clean); treat backlog as product list above.
+
+---
+
+## 10. Session delta
+
+- **Doc update:** Documented **make picks** gate — [`GET /api/check-pick-page`](app/api/check-pick-page/route.js), **six-digit** path rule on [`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx), smoke + API table + frontend map.
+
+---
+
+## 11. New / modified files (this session)
+
+- **`CLAUDE.md`** only.
+
+---
+
+## Game rules (short)
+
+- Pool **round 3** = NHL R3+R4 points ([`lib/scoring.js`](lib/scoring.js)).
+- Roster: 12 players — 3F/2D/1G per conference; salary cap **`PICK_SALARY_CAP` = 30** ([`lib/pick-roster-rules.js`](lib/pick-roster-rules.js)); 3 stars (one per F/D/G group).
+- Scoring: goal/assist 1; goalie win 2, shutout 1; star doubles that pick’s pool-round points.
+
+---
+
+## NHL API (in code)
+
+Base: `https://api-web.nhle.com/v1/` — [`lib/nhl/api.js`](lib/nhl/api.js).
+
+- `/playoff-bracket/{year}` — teams  
+- `/standings/{yyyy-mm-dd}` — conferences (`{year}-04-01`)  
+- `/roster/{abbrev}/{season}` — players  
+- `/player/{id}/game-log/{season}/3` — playoff (stats sync)  
+- `/player/{id}/game-log/{season}/2` — regular season  
+
+Playoff **game id** (stats): length 10; `gameId.slice(4,6) === "03"`; round = `Number(gameId.slice(6,8))` (see [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js)).
+
+---
+
+## Commissioner
+
+**David Tucker** (`dftucker@gmail.com`). Participants from a **Google Sheet**; salaries editable in Supabase. Casual friends pool.
+
+---
+
+### Start here
+
+1. **`npm run dev`** → **`http://localhost:3000`**
+2. **Shell layout:** [`app/layout.jsx`](app/layout.jsx) + [`app/globals.css`](app/globals.css)
+3. **API:** nine handlers under [`app/api/`](app/api/) (see §6; includes [`check-pick-page`](app/api/check-pick-page/route.js))
+4. **Supabase:** [`lib/supabase/server.js`](lib/supabase/server.js) — tables **`participants`**, **`players`**, **`picks`**, **`stats`**, **`pool_settings`**; DDL helpers in [`sql/`](sql/)

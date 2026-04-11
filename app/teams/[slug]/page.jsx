@@ -2,13 +2,13 @@ export const metadata = {
   title: "Team | V Chill Pool",
 };
 
-import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   arePicksVisibleAfterDeadline,
   fetchPoolSettings,
 } from "@/lib/pool-settings";
 import { computeParticipantSummary } from "@/lib/scoring";
+import TeamBio from "./TeamBio";
 import TeamClient from "./ui";
 
 export default async function TeamPage({ params }) {
@@ -16,7 +16,7 @@ export default async function TeamPage({ params }) {
   const supabase = createServerSupabaseClient();
   const { data: participant } = await supabase
     .from("participants")
-    .select("id,name,slug,pick_page_id")
+    .select("id,name,slug,pick_page_id,location,fav,linkedin")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -119,28 +119,14 @@ export default async function TeamPage({ params }) {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
       <div className="w-full max-w-3xl text-center">
-        <h1 className="font-display text-[32px] leading-[1.0] font-bold text-[#163a59]">
+        <h1 className="text-[32px] leading-[1.0] font-black text-[#163a59]">
           {displayName}
         </h1>
-        <p className="mt-3 text-[16px] leading-[1.2] text-zinc-800">
-          Lives in Berlin
-          <br />
-          wears Flames pyjamas
-          <br />
-          learn more <span className="underline">here</span>.
-        </p>
-
-        {participant?.pick_page_id ? (
-          <p className="mt-4 text-sm text-zinc-700">
-            Picks page:{" "}
-            <Link
-              className="font-mono underline"
-              href={`/picks/${participant.pick_page_id}`}
-            >
-              /picks/{participant.pick_page_id}
-            </Link>
-          </p>
-        ) : null}
+        <TeamBio
+          location={participant?.location}
+          fav={participant?.fav}
+          linkedin={participant?.linkedin}
+        />
 
         <TeamClient
           season={season}
