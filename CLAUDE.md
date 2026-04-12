@@ -17,7 +17,7 @@ Living doc: **verify in repo** if behavior drifts. Paths from repo root `vchill-
 | Home / join context | `/` | [`app/page.jsx`](app/page.jsx) |
 | Enter pick code | `/make-picks` | [`app/make-picks/page.jsx`](app/make-picks/page.jsx), [`app/make-picks/ui.jsx`](app/make-picks/ui.jsx) — **exactly 6 digits** (input capped); then **`GET /api/check-pick-page?pick_page_id=`** must succeed before navigating to `/picks/…` |
 | Build & submit roster | `/picks/[pick_page_id]` | [`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx), [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx), [`DeadlineAtForViewer.jsx`](app/picks/[pick_page_id]/DeadlineAtForViewer.jsx) |
-| Standings | `/standings` | [`app/standings/page.jsx`](app/standings/page.jsx), [`lib/scoring.js`](lib/scoring.js) |
+| Standings | `/standings` | [`app/standings/page.jsx`](app/standings/page.jsx), [`lib/scoring.js`](lib/scoring.js) — each team **name** links to **`/teams/[slug]`** |
 | Team bio + rounds + compare | `/teams/[slug]` | [`app/teams/[slug]/page.jsx`](app/teams/[slug]/page.jsx), [`TeamBio.jsx`](app/teams/[slug]/TeamBio.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) |
 | Commissioner | `/admin` | [`app/admin/page.jsx`](app/admin/page.jsx), [`app/admin/ui.jsx`](app/admin/ui.jsx) |
 
@@ -34,8 +34,8 @@ Living doc: **verify in repo** if behavior drifts. Paths from repo root `vchill-
 
 **Where code lives**
 
-- **Routes & layouts:** `app/` — RSC by default; **`"use client"`** on picker, admin UI, team compare UI, teams menu, etc.
-- **Shared chrome:** [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx), [`app/_components/TeamsMenuClient.jsx`](app/_components/TeamsMenuClient.jsx).
+- **Routes & layouts:** `app/` — RSC by default; **`"use client"`** on picker, admin UI, team compare UI, etc.
+- **Shared chrome:** [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx) — **Make picks** + **Standings** only (desktop nav + mobile `<details>`); no global Teams menu (use standings name links).
 - **Domain logic:** `lib/` (scoring, pool settings, pick rules, NHL, eligibility, [`lib/roster-slot-order.js`](lib/roster-slot-order.js) for team table slot order aligned with picks UI).
 
 **Next.js 16** — short pointer in [`AGENTS.md`](AGENTS.md) (read `node_modules/next/dist/docs/` if APIs surprise you).
@@ -110,7 +110,7 @@ Do **not** commit `.env*`.
 **Gotchas**
 
 - `GET /api/sync-stats` with **`offset=0`** deletes all **`stats`** for that `season` before import.
-- Replacing **`players`** rows can invalidate **`picks.player_id`** FKs (ops).
+- Replacing **`players`** rows can invalidate **`picks.player_id`** FKs (ops). **`sync-players`** still deletes/re-inserts rows but reapplies prior **`salary`** when the same **`nhl_id`** returns (new players default to **0**).
 
 ---
 
@@ -123,7 +123,7 @@ Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 | Method | Path | Auth | Query / body | Success / effects | Typical errors |
 |--------|------|------|----------------|-------------------|----------------|
 | `GET` | `/api/sync-participants` | None | — | Sheet → upsert `participants` | `500` (missing URL, sheet, DB) |
-| `GET` | `/api/sync-players` | None | `year` (default `2025`) | Replace `players` for derived `season` | `500` / empty data |
+| `GET` | `/api/sync-players` | None | `year` (default `2025`); optional `extra_teams=CBJ,NSH` (comma tri-codes) | Replace `players` for derived `season` from bracket + extras; **preserves `salary` by `nhl_id`** across delete/insert | `500` / empty data |
 | `GET` | `/api/playoff-teams` | None | **`year`** required | `{ ok, year, season, teams }` | `400`, `502` |
 | `GET` | `/api/sync-stats` | If `SYNC_STATS_SECRET`: Bearer / `x-sync-stats-secret` / `x-admin-password` | `year`, `limit`, `offset` (default `0`), `concurrency` (default **2**, clamp 1–10) | Batch stats; **`offset=0`** wipes `stats` for season | `401`, `500` |
 | `GET` | `/api/sync-regular-season` | None | `year`, `limit`, `offset`, `concurrency` (defaults in route) | Updates `players.season_points` | `500` |
@@ -145,8 +145,8 @@ Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 | Home | [`app/page.jsx`](app/page.jsx) | Marketing |
 | Make picks | [`app/make-picks/page.jsx`](app/make-picks/page.jsx), [`ui.jsx`](app/make-picks/ui.jsx) | Digits-only input **max 6**; submit calls [`/api/check-pick-page`](app/api/check-pick-page/route.js) then `location` to `/picks/{code}`; inline error if missing/invalid |
 | Picks | [`page.jsx`](app/picks/[pick_page_id]/page.jsx) (`dynamic = "force-dynamic"`), [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx) | **`pick_page_id` param** must be **exactly six digits** or `notFound()`; sortable picker; roster chips; `savedIdsKey` / `useEffect` after `router.refresh()`; client `key` includes round + lock |
-| Standings | [`app/standings/page.jsx`](app/standings/page.jsx) | `computeStandingsRows` |
-| Teams | [`page.jsx`](app/teams/[slug]/page.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) | Rounds table + compare; compare calls `/api/team-summary`; slot order from [`lib/roster-slot-order.js`](lib/roster-slot-order.js) + [`lib/scoring.js`](lib/scoring.js) `computeParticipantSummary` |
+| Standings | [`app/standings/page.jsx`](app/standings/page.jsx) | `computeStandingsRows`; each team name in the first column links to `/teams/{slug}` when `slug` is set |
+| Teams | [`page.jsx`](app/teams/[slug]/page.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) | Rounds table + compare; compare calls `/api/team-summary`; slot order from [`lib/roster-slot-order.js`](lib/roster-slot-order.js) + [`lib/scoring.js`](lib/scoring.js) `computeParticipantSummary`; entry via standings (not header) |
 | Admin | [`app/admin/page.jsx`](app/admin/page.jsx), [`ui.jsx`](app/admin/ui.jsx) | Syncs, pool form, eligible teams, stats batch fields |
 
 **Gotchas**
@@ -195,13 +195,14 @@ Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 
 ## 10. Session delta
 
-- **Doc update:** Documented **make picks** gate — [`GET /api/check-pick-page`](app/api/check-pick-page/route.js), **six-digit** path rule on [`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx), smoke + API table + frontend map.
+- **Nav:** Removed **Teams** desktop control + per-team links from mobile menu; [`SiteHeader.jsx`](app/_components/SiteHeader.jsx) no longer queries Supabase for the nav. Deleted [`TeamsMenuClient.jsx`](app/_components/TeamsMenuClient.jsx). **CLAUDE.md** updated (standings → team discovery).
 
 ---
 
 ## 11. New / modified files (this session)
 
-- **`CLAUDE.md`** only.
+- [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx), **`CLAUDE.md`**
+- **Removed:** `app/_components/TeamsMenuClient.jsx`
 
 ---
 

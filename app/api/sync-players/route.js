@@ -21,19 +21,37 @@ function toConference(conferenceNameOrAbbrev) {
   return "Unknown";
 }
 
-async function fetchTeamConferenceMap({ year }) {
+async function fetchStandingsTeamMaps({ year }) {
   const date = `${year}-04-01`;
   const standings = await nhlFetch(`/standings/${date}`);
-  const map = new Map();
+  const conferenceByTeam = new Map();
+  const teamNameByAbbrev = new Map();
   for (const row of standings.standings ?? []) {
     const abbrev = getText(row.teamAbbrev).toUpperCase();
     if (!abbrev) continue;
-    map.set(
+    conferenceByTeam.set(
       abbrev,
       toConference(getText(row.conferenceName) || getText(row.conferenceAbbrev))
     );
+    const name =
+      getText(row.placeName?.default) ||
+      getText(row.teamName?.default) ||
+      getText(row.teamCommonName?.default) ||
+      abbrev;
+    teamNameByAbbrev.set(abbrev, name.trim() || abbrev);
   }
-  return map;
+  return { conferenceByTeam, teamNameByAbbrev };
+}
+
+/** Comma-separated tri-codes, e.g. "CBJ,NSH" → ["CBJ","NSH"] */
+function parseExtraTeamsParam(raw) {
+  if (!raw || typeof raw !== "string") return [];
+  const out = [];
+  for (const part of raw.split(",")) {
+    const a = String(part).trim().toUpperCase();
+    if (/^[A-Z]{2,4}$/.test(a)) out.push(a);
+  }
+  return [...new Set(out)];
 }
 
 function rosterToPlayerRows({ roster, teamAbbrev, teamName, season, conference }) {
@@ -47,7 +65,6 @@ function rosterToPlayerRows({ roster, teamAbbrev, teamName, season, conference }
       team_abbrev: teamAbbrev,
       position: "F",
       conference,
-      salary: 0,
       season,
     });
   }
@@ -60,7 +77,6 @@ function rosterToPlayerRows({ roster, teamAbbrev, teamName, season, conference }
       team_abbrev: teamAbbrev,
       position: "D",
       conference,
-      salary: 0,
       season,
     });
   }
@@ -73,7 +89,6 @@ function rosterToPlayerRows({ roster, teamAbbrev, teamName, season, conference }
       team_abbrev: teamAbbrev,
       position: "G",
       conference,
-      salary: 0,
       season,
     });
   }
@@ -86,11 +101,26 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get("year") || "2025");
     const season = playoffYearToSeasonId(year);
+    const extraAbbrevs = parseExtraTeamsParam(searchParams.get("extra_teams") || "");
 
     const bracket = await nhlFetch(`/playoff-bracket/${year}`);
-    const conferenceByTeam = await fetchTeamConferenceMap({ year });
+    const { conferenceByTeam, teamNameByAbbrev } = await fetchStandingsTeamMaps({
+      year,
+    });
 
-    const teamMap = extractPlayoffTeamsFromBracket(bracket);
+    const teamMap = new Map(extractPlayoffTeamsFromBracket(bracket));
+    const teamsFromBracket = teamMap.size;
+    let extraTeamsAdded = 0;
+    for (const abbrev of extraAbbrevs) {
+      if (!teamMap.has(abbrev)) {
+        teamMap.set(abbrev, {
+          abbrev,
+          name: teamNameByAbbrev.get(abbrev) || abbrev,
+        });
+        extraTeamsAdded++;
+      }
+    }
+
     const teams = Array.from(teamMap.values());
     if (teams.length === 0) {
       return Response.json(
@@ -99,7 +129,7 @@ export async function GET(req) {
       );
     }
 
-    const allPlayers = [];
+    const playerByNhlId = new Map();
     for (const team of teams) {
       const abbrevUpper = team.abbrev;
       const roster = await nhlFetch(`/roster/${abbrevUpper}/${season}`);
@@ -110,18 +140,48 @@ export async function GET(req) {
           ? fromStandings
           : "Unknown");
 
-      allPlayers.push(
-        ...rosterToPlayerRows({
-          roster,
-          teamAbbrev: abbrevUpper,
-          teamName: team.name,
-          season,
-          conference,
-        })
-      );
+      const rows = rosterToPlayerRows({
+        roster,
+        teamAbbrev: abbrevUpper,
+        teamName: team.name,
+        season,
+        conference,
+      });
+      for (const row of rows) {
+        if (!playerByNhlId.has(row.nhl_id)) {
+          playerByNhlId.set(row.nhl_id, row);
+        }
+      }
     }
 
     const supabase = createServerSupabaseClient();
+
+    const { data: existingPlayers, error: existingError } = await supabase
+      .from("players")
+      .select("nhl_id,salary")
+      .eq("season", season);
+
+    if (existingError) {
+      return Response.json(
+        { ok: false, step: "select_existing_salaries", error: existingError.message },
+        { status: 500 }
+      );
+    }
+
+    const salaryByNhlId = new Map();
+    for (const r of existingPlayers ?? []) {
+      const id = Number(r.nhl_id);
+      if (!Number.isFinite(id)) continue;
+      salaryByNhlId.set(id, Number(r.salary) || 0);
+    }
+
+    const allPlayers = [...playerByNhlId.values()].map((row) => ({
+      ...row,
+      salary: salaryByNhlId.has(row.nhl_id)
+        ? Number(salaryByNhlId.get(row.nhl_id)) || 0
+        : 0,
+    }));
+
     const { error: deleteError } = await supabase
       .from("players")
       .delete()
@@ -137,7 +197,7 @@ export async function GET(req) {
     const { data, error } = await supabase
       .from("players")
       .insert(allPlayers)
-      .select("id,nhl_id,name,team_abbrev,position,season");
+      .select("id,nhl_id,name,team_abbrev,position,season,salary");
 
     if (error) {
       return Response.json(
@@ -152,12 +212,25 @@ export async function GET(req) {
       conferenceCounts[c] = (conferenceCounts[c] || 0) + 1;
     }
 
+    let salariesNonZeroCarried = 0;
+    let salariesAnyCarried = 0;
+    for (const p of allPlayers) {
+      if (!salaryByNhlId.has(p.nhl_id)) continue;
+      salariesAnyCarried++;
+      if ((Number(salaryByNhlId.get(p.nhl_id)) || 0) > 0) salariesNonZeroCarried++;
+    }
+
     return Response.json({
       ok: true,
       year,
       season,
       teams: teams.length,
+      teams_from_bracket: teamsFromBracket,
+      extra_teams_query: extraAbbrevs.length,
+      extra_teams_added: extraTeamsAdded,
       players: allPlayers.length,
+      salaries_matched_prior_nhl_ids: salariesAnyCarried,
+      salaries_preserved_nonzero: salariesNonZeroCarried,
       conferenceCounts,
       upserted: data?.length ?? 0,
     });

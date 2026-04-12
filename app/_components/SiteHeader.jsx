@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { TeamsMenuClient } from "./TeamsMenuClient";
 
-function MobileMenu({ teams }) {
+function MobileMenu() {
   return (
     <details className="relative md:hidden">
       <summary
@@ -24,31 +22,12 @@ function MobileMenu({ teams }) {
         >
           Standings
         </Link>
-        <div className="my-2 h-px bg-white/10" />
-        {teams.map((t) => (
-          <Link
-            key={t.slug}
-            className="block px-4 py-2 text-sm font-black text-white/95 hover:bg-white/10 hover:underline"
-            href={`/teams/${t.slug}`}
-          >
-            {t.name}
-          </Link>
-        ))}
       </div>
     </details>
   );
 }
 
 export async function SiteHeader() {
-  const supabase = createServerSupabaseClient();
-  const { data } = await supabase
-    .from("participants")
-    .select("name,slug")
-    .order("name", { ascending: true });
-
-  const teams =
-    data?.filter((t) => t?.name && t?.slug).map((t) => ({ name: t.name, slug: t.slug })) ?? [];
-
   return (
     <header className="bg-[#193b5a]">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-6">
@@ -75,13 +54,11 @@ export async function SiteHeader() {
             >
               Standings
             </Link>
-            <TeamsMenuClient teams={teams} />
           </nav>
 
-          <MobileMenu teams={teams} />
+          <MobileMenu />
         </div>
       </div>
     </header>
   );
 }
-
