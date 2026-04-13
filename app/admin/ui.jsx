@@ -7,13 +7,8 @@ import {
   easternDatetimeLocalInputToUtcIso,
 } from "@/lib/deadline-timezone";
 
-function buildYearOptions() {
-  // “Playoff year” as shown in the NHL bracket endpoint.
-  const currentYear = new Date().getFullYear();
-  const years = [];
-  for (let y = currentYear; y >= currentYear - 5; y--) years.push(y);
-  return years;
-}
+/** Locked for this pool year; change next season in code. */
+const ADMIN_PLAYOFF_YEAR = 2026;
 
 function teamSetFromSettings(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return new Set();
@@ -47,17 +42,17 @@ function EligibleTeamsRoundAccordion({
         </span>
       </summary>
       <div className="space-y-2 border-t border-zinc-200 p-3">
-        <p className="text-xs text-zinc-500">
-          Only clubs in the NHL playoff bracket for the selected playoff year
-          appear here (same source as Sync players). If none are checked, every
-          synced playoff player is available for this round.
-        </p>
+          <p className="text-xs text-zinc-500">
+            Only clubs in the NHL playoff bracket for this pool year appear here
+            (same source as Sync players). If none are checked, every synced playoff
+            player is available for this round.
+          </p>
         {loadStatus === "loading" ? (
           <p className="text-xs text-zinc-600">Loading teams from bracket…</p>
         ) : loadStatus === "error" || total === 0 ? (
           <p className="text-xs text-amber-800">
-            Playoff teams could not be loaded. Fix the error above or try
-            another year.
+            Playoff teams could not be loaded. Fix the error above or check the
+            NHL bracket API.
           </p>
         ) : (
           <>
@@ -110,9 +105,10 @@ function EligibleTeamsRoundAccordion({
 }
 
 export default function AdminClient() {
-  const yearOptions = useMemo(() => buildYearOptions(), []);
-  const [year, setYear] = useState(2025);
-  const season = useMemo(() => playoffYearToSeasonId(year), [year]);
+  const season = useMemo(
+    () => playoffYearToSeasonId(ADMIN_PLAYOFF_YEAR),
+    []
+  );
   const [statsLimit, setStatsLimit] = useState(8);
   const [statsOffset, setStatsOffset] = useState(0);
   const [statsConcurrency, setStatsConcurrency] = useState(1);
@@ -144,7 +140,7 @@ export default function AdminClient() {
       try {
         const [poolRes, playoffRes] = await Promise.all([
           fetch(`/api/pool-settings?season=${encodeURIComponent(season)}`),
-          fetch(`/api/playoff-teams?year=${year}`),
+          fetch(`/api/playoff-teams?year=${ADMIN_PLAYOFF_YEAR}`),
         ]);
         const poolJson = await poolRes.json().catch(() => null);
         const playoffJson = await playoffRes.json().catch(() => null);
@@ -214,7 +210,7 @@ export default function AdminClient() {
     return () => {
       cancelled = true;
     };
-  }, [season, year]);
+  }, [season]);
 
   async function savePoolSettings() {
     setPoolSaving(true);
@@ -319,35 +315,20 @@ export default function AdminClient() {
       <div className="mt-8 flex flex-col gap-6">
         {/* 1. Season */}
         <div className="flex flex-col gap-3 rounded-xl border border-black/10 p-4">
-          <div className="text-sm font-black text-zinc-900">
-            Season (NHL year)
-          </div>
+          <div className="text-sm font-black text-zinc-900">Season</div>
           <p className="text-xs text-zinc-600">
-            Start here each year. All NHL syncs below use this playoff year and
-            the derived Supabase season id.
+            All NHL syncs on this page use the{" "}
+            <span className="font-semibold text-zinc-800">
+              {ADMIN_PLAYOFF_YEAR} playoffs
+            </span>{" "}
+            (Supabase{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono">{season}</code>
+            ). To switch next year, change{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono">
+              ADMIN_PLAYOFF_YEAR
+            </code>{" "}
+            in <code className="rounded bg-zinc-100 px-1">app/admin/ui.jsx</code>.
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-            <label className="text-sm font-medium text-zinc-900">
-              Playoff year
-              <select
-                className="ml-2 w-48 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span className="text-xs text-zinc-500">
-              (e.g. use 2025 to test last season&apos;s playoffs)
-            </span>
-            <span className="text-xs font-mono text-zinc-600">
-              Season id: {season}
-            </span>
-          </div>
         </div>
 
         {/* 2. Roster and regular season */}
@@ -356,16 +337,17 @@ export default function AdminClient() {
             Roster and regular season
           </div>
           <p className="text-xs text-zinc-600">
-            Run once you are on the correct year. Salaries are edited in Supabase.
-            After your Round 1 pick deadline, you typically leave players and
-            regular-season points alone until next year; rerun players if the
-            bracket or rosters change before then.
+            Salaries are edited in Supabase. After your Round 1 pick deadline, you
+            typically leave players and regular-season points alone until next
+            year; rerun players if the bracket or rosters change before then.
           </p>
           <button
             className="w-fit rounded-xl border border-black/10 px-4 py-3 text-left text-sm hover:bg-black/[.02] disabled:opacity-50"
             type="button"
             disabled={!!running}
-            onClick={() => run("players", `/api/sync-players?year=${year}`)}
+            onClick={() =>
+              run("players", `/api/sync-players?year=${ADMIN_PLAYOFF_YEAR}`)
+            }
           >
             {running === "players"
               ? "Syncing players…"
@@ -401,7 +383,7 @@ export default function AdminClient() {
                 onClick={() =>
                   run(
                     "regularSeason",
-                    `/api/sync-regular-season?year=${year}&limit=${regLimit}&offset=${regOffset}&concurrency=1`
+                    `/api/sync-regular-season?year=${ADMIN_PLAYOFF_YEAR}&limit=${regLimit}&offset=${regOffset}&concurrency=1`
                   )
                 }
               >
@@ -707,7 +689,7 @@ export default function AdminClient() {
               onClick={() =>
                 run(
                   "stats",
-                  `/api/sync-stats?year=${year}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
+                  `/api/sync-stats?year=${ADMIN_PLAYOFF_YEAR}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
                 )
               }
             >

@@ -162,7 +162,7 @@ Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 - **Workflow:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — chains `sync-stats` until done; **defaults `limit=8`, `concurrency=1`** (not read from `pool_settings`).
 - **Off-season:** avoid scheduled `offset=0` runs that wipe `stats`; disable workflow if unused.
 - **NHL:** [`lib/nhl/api.js`](lib/nhl/api.js); stats fetch **`maxRetries: 8`**, **`baseDelayMs: 1500`** in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js).
-- **Bracket / season:** Admin **year** must align with `pool_settings.season` and `players.season` ([`lib/nhl/season.js`](lib/nhl/season.js)).
+- **Bracket / season:** Admin UI locks **playoff year 2026** (`ADMIN_PLAYOFF_YEAR` in [`app/admin/ui.jsx`](app/admin/ui.jsx)); `pool_settings.season` and `players.season` should stay **`20252026`**. To prune other seasons in Supabase: `npm run prune:old-seasons -- --dry-run` then `--execute` ([`scripts/prune-noncurrent-player-seasons.mjs`](scripts/prune-noncurrent-player-seasons.mjs)).
 - **Stats schema drift:** probe insert in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js).
 
 ---
