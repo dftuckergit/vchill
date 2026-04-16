@@ -6,6 +6,7 @@ create table if not exists pool_settings (
   deadline_r1 timestamptz,
   deadline_r2 timestamptz,
   deadline_r3 timestamptz,
+  payment_deadline_at timestamptz,
   eligible_teams_r1 text[],
   eligible_teams_r2 text[],
   eligible_teams_r3 text[],

@@ -138,6 +138,12 @@ export async function PUT(req) {
       existing
     );
 
+    const payment_deadline_at =
+      body != null &&
+      Object.prototype.hasOwnProperty.call(body, "payment_deadline_at")
+        ? parseDeadline(body.payment_deadline_at)
+        : existing.payment_deadline_at ?? null;
+
     const now = new Date().toISOString();
     const row = {
       season,
@@ -145,6 +151,7 @@ export async function PUT(req) {
       deadline_r1,
       deadline_r2,
       deadline_r3,
+      payment_deadline_at,
       eligible_teams_r1,
       eligible_teams_r2,
       eligible_teams_r3,

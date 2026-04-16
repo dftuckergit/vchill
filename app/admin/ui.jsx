@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CURRENT_POOL_PLAYOFF_YEAR } from "@/lib/current-pool";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 import {
   utcIsoToEasternDatetimeLocalInput,
   easternDatetimeLocalInputToUtcIso,
 } from "@/lib/deadline-timezone";
-
-/** Locked for this pool year; change next season in code. */
-const ADMIN_PLAYOFF_YEAR = 2026;
 
 function teamSetFromSettings(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return new Set();
@@ -106,7 +104,7 @@ function EligibleTeamsRoundAccordion({
 
 export default function AdminClient() {
   const season = useMemo(
-    () => playoffYearToSeasonId(ADMIN_PLAYOFF_YEAR),
+    () => playoffYearToSeasonId(CURRENT_POOL_PLAYOFF_YEAR),
     []
   );
   const [statsLimit, setStatsLimit] = useState(8);
@@ -123,6 +121,7 @@ export default function AdminClient() {
   const [deadlineR1, setDeadlineR1] = useState("");
   const [deadlineR2, setDeadlineR2] = useState("");
   const [deadlineR3, setDeadlineR3] = useState("");
+  const [paymentDeadline, setPaymentDeadline] = useState("");
   const [poolLoadError, setPoolLoadError] = useState(null);
   const [poolSaving, setPoolSaving] = useState(false);
   const [poolSaveResult, setPoolSaveResult] = useState(null);
@@ -140,7 +139,7 @@ export default function AdminClient() {
       try {
         const [poolRes, playoffRes] = await Promise.all([
           fetch(`/api/pool-settings?season=${encodeURIComponent(season)}`),
-          fetch(`/api/playoff-teams?year=${ADMIN_PLAYOFF_YEAR}`),
+          fetch(`/api/playoff-teams?year=${CURRENT_POOL_PLAYOFF_YEAR}`),
         ]);
         const poolJson = await poolRes.json().catch(() => null);
         const playoffJson = await playoffRes.json().catch(() => null);
@@ -163,6 +162,7 @@ export default function AdminClient() {
         setDeadlineR1(utcIsoToEasternDatetimeLocalInput(s.deadline_r1));
         setDeadlineR2(utcIsoToEasternDatetimeLocalInput(s.deadline_r2));
         setDeadlineR3(utcIsoToEasternDatetimeLocalInput(s.deadline_r3));
+        setPaymentDeadline(utcIsoToEasternDatetimeLocalInput(s.payment_deadline_at));
         setEligibleR1(
           new Set(
             [...teamSetFromSettings(s.eligible_teams_r1)].filter((a) =>
@@ -241,12 +241,21 @@ export default function AdminClient() {
           "Round 3+4 deadline could not be read as Eastern Time. Check the date and time."
         );
       }
+      const paymentIso = paymentDeadline
+        ? easternDatetimeLocalInputToUtcIso(paymentDeadline)
+        : null;
+      if (paymentDeadline && paymentIso == null) {
+        throw new Error(
+          "Home page pay-by deadline could not be read as Eastern Time. Check the date and time."
+        );
+      }
       const body = {
         season,
         current_round: poolCurrentRound,
         deadline_r1: r1Iso,
         deadline_r2: r2Iso,
         deadline_r3: r3Iso,
+        payment_deadline_at: paymentIso,
         eligible_teams_r1:
           eligibleR1.size > 0 ? [...eligibleR1].sort() : null,
         eligible_teams_r2:
@@ -267,6 +276,7 @@ export default function AdminClient() {
       setPoolSaveResult(json);
       if (json?.settings) {
         const s = json.settings;
+        setPaymentDeadline(utcIsoToEasternDatetimeLocalInput(s.payment_deadline_at));
         if (s.stats_sync_limit != null)
           setStatsLimit(
             Math.max(1, Math.min(100, Math.round(Number(s.stats_sync_limit))))
@@ -319,15 +329,16 @@ export default function AdminClient() {
           <p className="text-xs text-zinc-600">
             All NHL syncs on this page use the{" "}
             <span className="font-semibold text-zinc-800">
-              {ADMIN_PLAYOFF_YEAR} playoffs
+              {CURRENT_POOL_PLAYOFF_YEAR} playoffs
             </span>{" "}
             (Supabase{" "}
             <code className="rounded bg-zinc-100 px-1 font-mono">{season}</code>
             ). To switch next year, change{" "}
             <code className="rounded bg-zinc-100 px-1 font-mono">
-              ADMIN_PLAYOFF_YEAR
+              CURRENT_POOL_PLAYOFF_YEAR
             </code>{" "}
-            in <code className="rounded bg-zinc-100 px-1">app/admin/ui.jsx</code>.
+            in{" "}
+            <code className="rounded bg-zinc-100 px-1">lib/current-pool.js</code>.
           </p>
         </div>
 
@@ -346,7 +357,7 @@ export default function AdminClient() {
             type="button"
             disabled={!!running}
             onClick={() =>
-              run("players", `/api/sync-players?year=${ADMIN_PLAYOFF_YEAR}`)
+              run("players", `/api/sync-players?year=${CURRENT_POOL_PLAYOFF_YEAR}`)
             }
           >
             {running === "players"
@@ -383,7 +394,7 @@ export default function AdminClient() {
                 onClick={() =>
                   run(
                     "regularSeason",
-                    `/api/sync-regular-season?year=${ADMIN_PLAYOFF_YEAR}&limit=${regLimit}&offset=${regOffset}&concurrency=1`
+                    `/api/sync-regular-season?year=${CURRENT_POOL_PLAYOFF_YEAR}&limit=${regLimit}&offset=${regOffset}&concurrency=1`
                   )
                 }
               >
@@ -443,6 +454,25 @@ export default function AdminClient() {
               Supabase if missing): {poolLoadError}
             </p>
           ) : null}
+
+          <div className="space-y-2 rounded-md bg-zinc-50 px-3 py-3 ring-1 ring-zinc-200">
+            <div className="text-xs font-black uppercase tracking-wide text-zinc-500">
+              Home page — Get in
+            </div>
+            <label className="block text-xs text-zinc-700">
+              Pay-by date &amp; time (Eastern Time, bold on home)
+              <input
+                className="mt-1 block w-full max-w-xs rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                type="datetime-local"
+                value={paymentDeadline}
+                onChange={(e) => setPaymentDeadline(e.target.value)}
+              />
+            </label>
+            <p className="text-xs text-zinc-500">
+              Clear the field and save to remove the &quot;by …&quot; deadline from
+              the home page.
+            </p>
+          </div>
 
           <label className="text-sm font-medium text-zinc-900">
             Current pool round (open for picks)
@@ -689,7 +719,7 @@ export default function AdminClient() {
               onClick={() =>
                 run(
                   "stats",
-                  `/api/sync-stats?year=${ADMIN_PLAYOFF_YEAR}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
+                  `/api/sync-stats?year=${CURRENT_POOL_PLAYOFF_YEAR}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
                 )
               }
             >

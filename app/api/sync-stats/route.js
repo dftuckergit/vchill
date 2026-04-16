@@ -182,6 +182,9 @@ export async function GET(req) {
     let idx = 0;
     let inserted = 0;
 
+    /** One timestamp per sync request for `stats.created_at` (standings “last updated”). */
+    const statsWriteAt = new Date().toISOString();
+
     async function worker() {
       while (idx < selectedPlayers.length) {
         const i = idx++;
@@ -201,6 +204,7 @@ export async function GET(req) {
             round,
             goals: agg.goals,
             assists: agg.assists,
+            created_at: statsWriteAt,
           };
           if (winsField) row[winsField] = agg.goalie_wins;
           if (shutoutField) row[shutoutField] = agg.goalie_shutout;
