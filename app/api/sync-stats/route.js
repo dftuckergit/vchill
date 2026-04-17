@@ -2,8 +2,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { nhlFetch } from "@/lib/nhl/api";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 
-/** Hobby / Pro: allow long batched NHL fetches (default is often 10s). */
-export const maxDuration = 60;
+/** Vercel: allow batched NHL fetches + 429 backoff without 504 (Hobby max 300s). */
+export const maxDuration = 300;
 
 /**
  * When SYNC_STATS_SECRET is set, require either:

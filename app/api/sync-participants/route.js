@@ -2,7 +2,7 @@ import { fetchParticipantsFromSheet } from "@/lib/participants/sheet";
 import { slugify } from "@/lib/slugify";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function trimText(v) {
   const t = String(v ?? "").trim();

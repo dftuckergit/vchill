@@ -116,7 +116,7 @@ Do **not** commit `.env*`.
 
 ## 6. API (Route Handlers only)
 
-All handlers: `app/api/**/route.js`. **`export const maxDuration = 60`** on: [`sync-participants`](app/api/sync-participants/route.js), [`sync-players`](app/api/sync-players/route.js), [`sync-stats`](app/api/sync-stats/route.js), [`sync-regular-season`](app/api/sync-regular-season/route.js) — not on `check-pick-page`, `pool-settings`, `playoff-teams`, `picks/submit`, `team-summary`.
+All handlers: `app/api/**/route.js`. **`export const maxDuration = 300`** on: [`sync-participants`](app/api/sync-participants/route.js), [`sync-players`](app/api/sync-players/route.js), [`sync-stats`](app/api/sync-stats/route.js), [`sync-regular-season`](app/api/sync-regular-season/route.js) — not on `check-pick-page`, `pool-settings`, `playoff-teams`, `picks/submit`, `team-summary`.
 
 Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 

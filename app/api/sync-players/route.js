@@ -5,7 +5,7 @@ import { playoffYearToSeasonId } from "@/lib/nhl/season";
 import { extractPlayoffTeamsFromBracket } from "@/lib/nhl/playoff-bracket-teams";
 
 /** Hobby / Pro: roster sync hits many NHL endpoints. */
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function getText(v) {
   if (!v) return "";
