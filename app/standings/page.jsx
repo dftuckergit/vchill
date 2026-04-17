@@ -66,8 +66,15 @@ export default async function StandingsPage() {
     statsRows: statsRows ?? [],
   });
 
-  const colClass = "w-[20%] min-w-0 px-2 py-2.5 text-xs font-black";
-  const colClassBody = "w-[20%] min-w-0 px-2 py-1.5";
+  /** Team column wider so names can wrap on mobile; R1–R3+4–Tot stay equal width. */
+  const teamColHead =
+    "w-[36%] min-w-0 px-2 py-2.5 text-left text-xs font-black align-middle";
+  const teamColBody =
+    "w-[36%] min-w-0 px-2 py-1.5 text-left align-top break-words [overflow-wrap:anywhere]";
+  const numColHead =
+    "w-[16%] min-w-0 px-2 py-2.5 text-xs font-black align-middle text-right";
+  const numColBody =
+    "w-[16%] min-w-0 px-2 py-1.5 align-top text-right tabular-nums";
 
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
@@ -77,46 +84,36 @@ export default async function StandingsPage() {
         </h1>
 
         <div className="mt-10 overflow-x-auto rounded-md">
-          <table className="w-full min-w-[28rem] table-fixed text-sm">
+          <table className="w-full min-w-0 table-fixed text-sm sm:min-w-[28rem]">
             <thead>
               <tr className="border-b border-zinc-300 text-zinc-900">
-                <th className={`${colClass} text-left`}>Team</th>
-                <th className={`${colClass} text-right`}>R1</th>
-                <th className={`${colClass} text-right`}>R2</th>
-                <th className={`${colClass} text-right`}>R3+4</th>
-                <th className={`${colClass} text-right`}>Total</th>
+                <th className={teamColHead}>Team</th>
+                <th className={numColHead}>R1</th>
+                <th className={numColHead}>R2</th>
+                <th className={numColHead}>R3+4</th>
+                <th className={numColHead}>Total</th>
               </tr>
             </thead>
             <tbody className="text-zinc-900">
               {rows.map((r) => (
                 <tr key={r.slug ?? r.name} className="border-b border-zinc-200">
-                  <td className={colClassBody}>
-                    <div className="truncate">
-                      {r.slug ? (
-                        <Link
-                          className="hover:underline"
-                          href={`/teams/${r.slug}`}
-                          title={r.name}
-                        >
-                          {r.name}
-                        </Link>
-                      ) : (
-                        r.name
-                      )}
-                    </div>
+                  <td className={teamColBody}>
+                    {r.slug ? (
+                      <Link
+                        className="hover:underline"
+                        href={`/teams/${r.slug}`}
+                        title={r.name}
+                      >
+                        {r.name}
+                      </Link>
+                    ) : (
+                      r.name
+                    )}
                   </td>
-                  <td className={`${colClassBody} text-right tabular-nums`}>
-                    {r.r1}
-                  </td>
-                  <td className={`${colClassBody} text-right tabular-nums`}>
-                    {r.r2}
-                  </td>
-                  <td className={`${colClassBody} text-right tabular-nums`}>
-                    {r.r34}
-                  </td>
-                  <td className={`${colClassBody} text-right tabular-nums`}>
-                    {r.total}
-                  </td>
+                  <td className={numColBody}>{r.r1}</td>
+                  <td className={numColBody}>{r.r2}</td>
+                  <td className={numColBody}>{r.r34}</td>
+                  <td className={numColBody}>{r.total}</td>
                 </tr>
               ))}
             </tbody>
