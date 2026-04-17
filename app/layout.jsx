@@ -16,6 +16,7 @@ export const metadata = {
   metadataBase: new URL(siteUrl),
   title: "V Chill Pool",
   description: "It's the 13th annual V Chill Playoff Pool powered by Searlenet",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }) {

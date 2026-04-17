@@ -18,6 +18,7 @@ import {
 } from "@/lib/pool-settings";
 import { notFound } from "next/navigation";
 import DeadlineAtForViewer from "./DeadlineAtForViewer";
+import ScoringExplainer from "./ScoringExplainer";
 import PicksClient from "./ui";
 
 function poolRoundTitle(r) {
@@ -244,7 +245,9 @@ export default async function PicksPage({ params }) {
               : null,
             eligibleTeamAbbrevsSorted,
           }}
-        />
+        >
+          <ScoringExplainer />
+        </PicksClient>
       </div>
     </main>
   );

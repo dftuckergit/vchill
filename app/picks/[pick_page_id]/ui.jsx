@@ -213,6 +213,7 @@ function buildInitialStars({ playersById, initialStarNhlIds }) {
 }
 
 export default function PicksClient({
+  children = null,
   pickPageId,
   season,
   currentPoolRound = 1,
@@ -466,7 +467,9 @@ export default function PicksClient({
         </p>
       ) : null}
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_0.7fr] lg:items-stretch">
+      {children}
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_0.7fr] lg:items-stretch">
         <section
           aria-label="Picker"
           className="flex h-[min(470px,60dvh)] min-h-0 flex-col overflow-hidden rounded-md border border-zinc-200 bg-white lg:min-h-0"
