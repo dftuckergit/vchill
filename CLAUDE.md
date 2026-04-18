@@ -18,6 +18,7 @@ Living doc: **verify in repo** if behavior drifts. Paths from repo root `vchill-
 | Enter pick code | `/make-picks` | [`app/make-picks/page.jsx`](app/make-picks/page.jsx), [`app/make-picks/ui.jsx`](app/make-picks/ui.jsx) — **exactly 6 digits** (input capped); then **`GET /api/check-pick-page?pick_page_id=`** must succeed before navigating to `/picks/…` |
 | Build & submit roster | `/picks/[pick_page_id]` | [`app/picks/[pick_page_id]/page.jsx`](app/picks/[pick_page_id]/page.jsx), [`ui.jsx`](app/picks/[pick_page_id]/ui.jsx), [`DeadlineAtForViewer.jsx`](app/picks/[pick_page_id]/DeadlineAtForViewer.jsx) |
 | Standings | `/standings` | [`app/standings/page.jsx`](app/standings/page.jsx), [`lib/scoring.js`](lib/scoring.js) — each team **name** links to **`/teams/[slug]`** |
+| Pick submission status | `/status` (not in nav) | [`app/status/page.jsx`](app/status/page.jsx), [`lib/pick-submission-status.js`](lib/pick-submission-status.js), [`StatusLastRefreshed.jsx`](app/_components/StatusLastRefreshed.jsx) — per participant **Round 1 / 2 / R3+4**: `none` or `submitted` (≥12 `picks` rows; R3+4 counts `round` 3 or 4); **Last refreshed** = server render time |
 | Team bio + rounds + compare | `/teams/[slug]` | [`app/teams/[slug]/page.jsx`](app/teams/[slug]/page.jsx), [`TeamBio.jsx`](app/teams/[slug]/TeamBio.jsx), [`ui.jsx`](app/teams/[slug]/ui.jsx) |
 | Commissioner | `/admin` | [`app/admin/page.jsx`](app/admin/page.jsx), [`app/admin/ui.jsx`](app/admin/ui.jsx) |
 
@@ -35,7 +36,7 @@ Living doc: **verify in repo** if behavior drifts. Paths from repo root `vchill-
 **Where code lives**
 
 - **Routes & layouts:** `app/` — RSC by default; **`"use client"`** on picker, admin UI, team compare UI, etc.
-- **Shared chrome:** [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx) — **Make picks** + **Standings** only (desktop nav + mobile `<details>`); no global Teams menu (use standings name links).
+- **Shared chrome:** [`app/_components/SiteHeader.jsx`](app/_components/SiteHeader.jsx) + [`MobileNavMenu.jsx`](app/_components/MobileNavMenu.jsx) — **Make picks** + **Standings** (desktop nav + mobile full-width overlay menu); no global Teams menu (use standings name links). **`/status`** (pick submission grid) is **not** linked in the nav — open by URL only.
 - **Domain logic:** `lib/` (scoring, pool settings, pick rules, NHL, eligibility, [`lib/roster-slot-order.js`](lib/roster-slot-order.js) for team table slot order aligned with picks UI).
 
 **Next.js 16** — short pointer in [`AGENTS.md`](AGENTS.md) (read `node_modules/next/dist/docs/` if APIs surprise you).
@@ -159,7 +160,7 @@ Common error JSON: `{ ok: false, error }` or `{ ok: false, step, error }`.
 ## 8. Operational notes
 
 - **Vercel:** `maxDuration` on long sync routes; keep **`sync-stats`** batches modest and concurrency low on Hobby.
-- **Workflow:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — chains `sync-stats` until done; **defaults `limit=8`, `concurrency=1`** (not read from `pool_settings`).
+- **Workflow:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — chains `sync-stats` until done; **defaults `year=2026`**, **`limit=8`, `concurrency=1`** on scheduled runs (not read from `pool_settings`). Bump default `year` when [`lib/current-pool.js`](lib/current-pool.js) `CURRENT_POOL_PLAYOFF_YEAR` changes.
 - **Off-season:** avoid scheduled `offset=0` runs that wipe `stats`; disable workflow if unused.
 - **NHL:** [`lib/nhl/api.js`](lib/nhl/api.js); stats fetch **`maxRetries: 8`**, **`baseDelayMs: 1500`** in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js).
 - **Bracket / season:** Admin UI locks **playoff year 2026** (`ADMIN_PLAYOFF_YEAR` in [`app/admin/ui.jsx`](app/admin/ui.jsx)); `pool_settings.season` and `players.season` should stay **`20252026`**. To prune other seasons in Supabase: `npm run prune:old-seasons -- --dry-run` then `--execute` ([`scripts/prune-noncurrent-player-seasons.mjs`](scripts/prune-noncurrent-player-seasons.mjs)).

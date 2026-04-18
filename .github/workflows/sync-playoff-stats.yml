@@ -6,6 +6,8 @@
 #
 # Off-season: disable this workflow in GitHub (Actions → workflow → … → Disable) or remove the schedule so
 # offset=0 is not run daily (first batch wipes that season’s stats before re-importing).
+#
+# Default NHL playoff `year` must match the app pool year (`CURRENT_POOL_PLAYOFF_YEAR` in lib/current-pool.js).
 
 name: Sync playoff stats
 
@@ -18,7 +20,7 @@ on:
       year:
         description: "NHL playoff year (query param year=)"
         required: false
-        default: "2025"
+        default: "2026"
       limit:
         description: "Players per batch (keep small for Vercel ~60s limit)"
         required: false
@@ -55,7 +57,7 @@ jobs:
           YEAR="${INPUT_YEAR:-}"
           LIMIT="${INPUT_LIMIT:-}"
           CONCURRENCY="${INPUT_CONCURRENCY:-}"
-          [ -z "$YEAR" ] && YEAR=2025
+          [ -z "$YEAR" ] && YEAR=2026
           [ -z "$LIMIT" ] && LIMIT=8
           [ -z "$CONCURRENCY" ] && CONCURRENCY=1
 
