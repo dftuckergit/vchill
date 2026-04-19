@@ -107,7 +107,7 @@ Do **not** commit `.env*`.
 | `participants` | `id`, `name`, `slug`, `pick_page_id` (unique), `location`, `fav`, `linkedin` — sync [`app/api/sync-participants/route.js`](app/api/sync-participants/route.js) upsert `onConflict: pick_page_id` (**does not delete** rows removed from sheet). |
 | `players` | `id`, `nhl_id`, `name`, `team`, `team_abbrev`, `position`, `conference`, `salary`, `season`, `season_points` — sync, picker, FK from `picks.player_id`. |
 | `picks` | `participant_id`, `player_id`, `round` (1–3; legacy **4** = pool round 3), `season` (8-char **text**), `is_star`, `submitted_at`. |
-| `stats` | `nhl_id`, `season`, `round` (NHL 1–4), goals/assists + goalie columns (names probed in sync-stats). `created_at` used for “last updated” on standings — see [`sql/stats_created_at.sql`](sql/stats_created_at.sql) if column missing. |
+| `stats` | `nhl_id`, `season`, `round` (NHL 1–4), goals/assists + optional goalie columns (`goalie_wins`, shutout variants — detected via tiny probe inserts in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js); **named** goalie/shutout pairs are tried before a minimal goals-only row so wins/shutouts are not skipped on nullable schemas). `created_at` for “last updated” on standings — see [`sql/stats_created_at.sql`](sql/stats_created_at.sql) if column missing. |
 | `pool_settings` | PK `season`; `current_round` 1–3; `deadline_r1`–`deadline_r3`; `payment_deadline_at`; `eligible_teams_r1`–`r3` (`text[]`); `stats_sync_limit`, `stats_sync_concurrency`; `updated_at` — [`lib/pool-settings.js`](lib/pool-settings.js). |
 
 **SQL helpers (no `supabase/migrations` in repo):** run in Supabase SQL editor as needed — [`sql/pool_settings.sql`](sql/pool_settings.sql), [`sql/pool_settings_eligible_teams.sql`](sql/pool_settings_eligible_teams.sql), [`sql/pool_settings_stats_sync_defaults.sql`](sql/pool_settings_stats_sync_defaults.sql), [`sql/pool_settings_payment_deadline.sql`](sql/pool_settings_payment_deadline.sql), [`sql/participants_bio_columns.sql`](sql/participants_bio_columns.sql), [`sql/stats_created_at.sql`](sql/stats_created_at.sql).
@@ -115,6 +115,7 @@ Do **not** commit `.env*`.
 **Gotchas**
 
 - **`GET /api/sync-stats?offset=0`:** deletes **all** `stats` for that `season`, then imports.
+- **`sync-stats` goalie fields:** column detection tries **`goalie_wins` / shutout name candidates before** a bare goals+assists probe; otherwise the first successful insert could omit goalie columns and scoring would show **0** goalie points ([`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) `detectStatsColumns`).
 - **`sync-players`:** delete/re-insert `players` for season; preserves **`salary`** by `nhl_id` when same player returns.
 
 ---
@@ -167,7 +168,7 @@ Common errors: JSON `{ ok: false, error }` or `{ ok: false, step, error }`.
 ## 8. Operational notes
 
 - **Vercel:** Long sync routes use `maxDuration = 300`. Keep **`sync-stats`** batches modest; **`offset=0`** full refresh is destructive for `stats`.
-- **GitHub cron:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — **`0 11 * * *` UTC** (~6 AM Eastern per comment); chains **`GET /api/sync-stats`** until `next_offset >= total_players`; defaults **`year=2026`**, **`limit=8`**, **`concurrency=1`** (workflow script; **not** read from `pool_settings`). **Off-season:** disable workflow so `offset=0` does not run daily.
+- **GitHub cron:** [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml) — **`0 6 * * *` UTC** (≈ **2:00 AM Eastern** during EDT; UTC-only cron — see workflow comment for EST); chains **`GET /api/sync-stats`** until `next_offset >= total_players`; defaults **`year=2026`**, **`limit=8`**, **`concurrency=1`** (workflow script; **not** read from `pool_settings`). **Off-season:** disable workflow so `offset=0` does not run daily.
 - **NHL:** [`lib/nhl/api.js`](lib/nhl/api.js); [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) uses **`maxRetries: 8`**, **`baseDelayMs: 1500`** on game-log fetches.
 - **NHL endpoints (in code):** bracket `/playoff-bracket/{year}`, standings `/standings/{yyyy}-04-01`, roster `/roster/{abbrev}/{season}`, game logs `/player/{id}/game-log/{season}/3` (playoff) and `/2` (regular season) — see [`lib/nhl/api.js`](lib/nhl/api.js) call sites.
 

@@ -19,6 +19,12 @@ export function SiteHeader() {
             >
               Standings
             </Link>
+            <Link
+              className="text-sm font-black text-white/90 hover:text-white hover:underline"
+              href="/analysis"
+            >
+              Analysis
+            </Link>
           </nav>
         }
       >

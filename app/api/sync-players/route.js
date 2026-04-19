@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { CURRENT_POOL_PLAYOFF_YEAR } from "@/lib/current-pool";
 import { nhlFetch } from "@/lib/nhl/api";
 import { conferenceForTeamAbbrev } from "@/lib/nhl/team-conference";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
@@ -99,7 +100,9 @@ function rosterToPlayerRows({ roster, teamAbbrev, teamName, season, conference }
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const year = Number(searchParams.get("year") || "2025");
+    const year = Number(
+      searchParams.get("year") || String(CURRENT_POOL_PLAYOFF_YEAR),
+    );
     const season = playoffYearToSeasonId(year);
     const extraAbbrevs = parseExtraTeamsParam(searchParams.get("extra_teams") || "");
 

@@ -68,6 +68,13 @@ export default function MobileNavMenu({ children, desktopNav }) {
             >
               Standings
             </Link>
+            <Link
+              href="/analysis"
+              className={mobileLinkClass}
+              onClick={() => setOpen(false)}
+            >
+              Analysis
+            </Link>
           </nav>
         </div>
       ) : null}

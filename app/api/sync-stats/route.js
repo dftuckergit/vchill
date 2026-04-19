@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { CURRENT_POOL_PLAYOFF_YEAR } from "@/lib/current-pool";
 import { nhlFetch } from "@/lib/nhl/api";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 
@@ -128,7 +129,9 @@ export async function GET(req) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const year = Number(searchParams.get("year") || "2025");
+    const year = Number(
+      searchParams.get("year") || String(CURRENT_POOL_PLAYOFF_YEAR),
+    );
     const limit = searchParams.get("limit")
       ? Number(searchParams.get("limit"))
       : null;

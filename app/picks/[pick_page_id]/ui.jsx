@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PICK_SALARY_CAP } from "@/lib/pick-roster-rules";
 import { teamPrimaryHex } from "@/lib/nhl/team-primary-colors";
+import { groupPosition } from "@/lib/player-position-group";
 
 /** Matches star / remove control width so empty and filled pick rows stay aligned */
 const PICK_CHIP_GRID =
@@ -153,13 +154,6 @@ function SortTh({
       </button>
     </th>
   );
-}
-
-function groupPosition(pos) {
-  if (pos === "F") return "Forwards";
-  if (pos === "D") return "Defence";
-  if (pos === "G") return "Goalies";
-  return "Other";
 }
 
 function emptyRoster() {

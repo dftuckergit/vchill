@@ -33,7 +33,7 @@ function PointsWithStar({ pointsText, showStar, muted }) {
   );
 }
 
-function PickCell({ pick, picksRevealed }) {
+function PickCell({ pick, picksRevealed, showSoloBrain = false }) {
   if (!picksRevealed) {
     return (
       <div className="flex min-w-0 items-baseline text-sm">
@@ -65,6 +65,15 @@ function PickCell({ pick, picksRevealed }) {
           {pick.team_abbrev}
         </span>{" "}
         <span className="font-normal">{pick.name}</span>
+        {showSoloBrain ? (
+          <span
+            className="ml-0.5 inline shrink-0"
+            title="Only one participant picked this player this round"
+            aria-label="Only one participant picked this player this round"
+          >
+            🧠
+          </span>
+        ) : null}
       </span>
       <PointsWithStar
         pointsText={pick.points}
@@ -75,7 +84,11 @@ function PickCell({ pick, picksRevealed }) {
   );
 }
 
-function RoundsSummaryTable({ meSummary, picksRevealedByRound }) {
+function RoundsSummaryTable({
+  meSummary,
+  picksRevealedByRound,
+  soloPickPlayerIdsByRound = { 1: [], 2: [], 3: [] },
+}) {
   const roundDefs = [
     { key: 1, title: "ROUND 1", revealed: picksRevealedByRound[1] !== false },
     { key: 2, title: "ROUND 2", revealed: picksRevealedByRound[2] !== false },
@@ -86,6 +99,12 @@ function RoundsSummaryTable({ meSummary, picksRevealedByRound }) {
     meSummary?.rounds?.[2]?.picks ?? [],
     meSummary?.rounds?.[3]?.picks ?? [],
   ];
+
+  const soloSets = useMemo(
+    () =>
+      [1, 2, 3].map((r) => new Set(soloPickPlayerIdsByRound[r] ?? [])),
+    [soloPickPlayerIdsByRound],
+  );
 
   return (
     <div className="mx-auto mt-10 w-full max-w-5xl max-md:-mx-6 max-md:px-6 md:mx-auto md:px-0">
@@ -134,6 +153,11 @@ function RoundsSummaryTable({ meSummary, picksRevealedByRound }) {
                   <PickCell
                     pick={byRound[ri][i] ?? null}
                     picksRevealed={r.revealed}
+                    showSoloBrain={
+                      !!r.revealed &&
+                      !!byRound[ri][i]?.player_id &&
+                      soloSets[ri].has(String(byRound[ri][i].player_id))
+                    }
                   />
                 </td>
               ))}
@@ -174,6 +198,7 @@ function CompareTable({
   season,
   currentPoolRound,
   picksRevealedByRound,
+  soloPickPlayerIdsByRound = { 1: [], 2: [], 3: [] },
   meSummary,
   teams,
 }) {
@@ -214,6 +239,11 @@ function CompareTable({
   const roundKey = currentPoolRound;
   const compareRevealed = picksRevealedByRound[roundKey] !== false;
   const title = compareRoundTitle(currentPoolRound);
+
+  const soloSetThisRound = useMemo(
+    () => new Set(soloPickPlayerIdsByRound[roundKey] ?? []),
+    [soloPickPlayerIdsByRound, roundKey],
+  );
 
   const mePicks = meSummary?.rounds?.[roundKey]?.picks ?? [];
   const theirPicks =
@@ -312,6 +342,11 @@ function CompareTable({
                     <PickCell
                       pick={mePicks[i] ?? null}
                       picksRevealed={compareRevealed}
+                      showSoloBrain={
+                        compareRevealed &&
+                        !!mePicks[i]?.player_id &&
+                        soloSetThisRound.has(String(mePicks[i].player_id))
+                      }
                     />
                   </td>
                   <td className="py-2 pl-2 pr-2 align-baseline">
@@ -323,6 +358,12 @@ function CompareTable({
                       <PickCell
                         pick={theirPicks[i] ?? null}
                         picksRevealed
+                        showSoloBrain={
+                          !!theirPicks[i]?.player_id &&
+                          soloSetThisRound.has(
+                            String(theirPicks[i].player_id),
+                          )
+                        }
                       />
                     ) : (
                       <PickCell pick={null} picksRevealed />
@@ -365,6 +406,7 @@ export default function TeamClient({
   season,
   currentPoolRound = 1,
   picksRevealedByRound = { 1: true, 2: true, 3: true },
+  soloPickPlayerIdsByRound = { 1: [], 2: [], 3: [] },
   meSummary,
   teams,
 }) {
@@ -373,11 +415,13 @@ export default function TeamClient({
       <RoundsSummaryTable
         meSummary={meSummary}
         picksRevealedByRound={picksRevealedByRound}
+        soloPickPlayerIdsByRound={soloPickPlayerIdsByRound}
       />
       <CompareTable
         season={season}
         currentPoolRound={currentPoolRound}
         picksRevealedByRound={picksRevealedByRound}
+        soloPickPlayerIdsByRound={soloPickPlayerIdsByRound}
         meSummary={meSummary}
         teams={teams}
       />

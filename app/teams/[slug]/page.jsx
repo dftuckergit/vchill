@@ -7,6 +7,7 @@ import {
   arePicksVisibleAfterDeadline,
   fetchPoolSettings,
 } from "@/lib/pool-settings";
+import { playerIdsWithSoloPickInRound } from "@/lib/analysis-player-metrics";
 import { computeParticipantSummary } from "@/lib/scoring";
 import TeamBio from "./TeamBio";
 import TeamClient from "./ui";
@@ -61,6 +62,21 @@ export default async function TeamPage({ params }) {
         3: arePicksVisibleAfterDeadline(poolSettings, 3),
       }
     : { 1: true, 2: true, 3: true };
+
+  const { data: allSeasonPicks } = season
+    ? await supabase
+        .from("picks")
+        .select("participant_id,player_id,round")
+        .eq("season", season)
+    : { data: [] };
+
+  const soloPickPlayerIdsByRound = season
+    ? {
+        1: playerIdsWithSoloPickInRound(allSeasonPicks ?? [], 1),
+        2: playerIdsWithSoloPickInRound(allSeasonPicks ?? [], 2),
+        3: playerIdsWithSoloPickInRound(allSeasonPicks ?? [], 3),
+      }
+    : { 1: [], 2: [], 3: [] };
 
   const meSummary =
     participant?.id && season
@@ -132,6 +148,7 @@ export default async function TeamPage({ params }) {
           season={season}
           currentPoolRound={currentPoolRound}
           picksRevealedByRound={picksRevealedByRound}
+          soloPickPlayerIdsByRound={soloPickPlayerIdsByRound}
           meSummary={meSummary}
           teams={teams ?? []}
         />
