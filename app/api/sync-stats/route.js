@@ -98,8 +98,10 @@ async function detectStatsColumns(supabase) {
     assists: 0,
   };
 
-  for (const winsField of [null, ...winsCandidates]) {
-    for (const shutoutField of [null, ...shutoutCandidates]) {
+  // Prefer real column names first: (null,null) often succeeds on nullable schemas and
+  // would skip goalie columns entirely, so wins/shutouts never get written or scored.
+  for (const winsField of [...winsCandidates, null]) {
+    for (const shutoutField of [...shutoutCandidates, null]) {
       const row = { ...base };
       if (winsField) row[winsField] = 0;
       if (shutoutField) row[shutoutField] = 0;

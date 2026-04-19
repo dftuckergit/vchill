@@ -13,8 +13,8 @@ name: Sync playoff stats
 
 on:
   schedule:
-    # ~6 AM Eastern (DST); adjust as needed (UTC).
-    - cron: "0 11 * * *"
+    # 2:00 AM Eastern during EDT (UTC-4) → 06:00 UTC. During EST (UTC-5) this fires 1:00 AM Eastern (GitHub cron is UTC-only).
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       year:
