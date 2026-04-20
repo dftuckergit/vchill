@@ -82,12 +82,20 @@ jobs:
           if [ -z "$YEAR" ]; then
             YEAR="${POOL_YEAR}"
           fi
-          echo "NHL playoff year=${YEAR} (pool file had ${POOL_YEAR}; empty manual year → use pool file)"
 
           LIMIT="$(echo "${DISPATCH_LIMIT:-}" | xargs)"
           CONCURRENCY="$(echo "${DISPATCH_CONCURRENCY:-}" | xargs)"
           [ -z "$LIMIT" ] && LIMIT=8
           [ -z "$CONCURRENCY" ] && CONCURRENCY=1
+
+          # Always visible: GitHub highlights ::notice::; repeat year on every batch line (log UI often collapses middle lines).
+          echo "::notice::sync-stats NHL playoff year=${YEAR} (lib/current-pool.js CURRENT_POOL_PLAYOFF_YEAR=${POOL_YEAR})"
+          echo "::group::Sync parameters"
+          echo "year=${YEAR}"
+          echo "pool_file_year=${POOL_YEAR}"
+          echo "limit=${LIMIT} concurrency=${CONCURRENCY}"
+          echo "base=${BASE}"
+          echo "::endgroup::"
 
           AUTH=()
           if [ -n "${SYNC_STATS_SECRET:-}" ]; then
@@ -101,7 +109,7 @@ jobs:
           while true; do
             BATCH=$((BATCH + 1))
             URL="${BASE}/api/sync-stats?year=${YEAR}&limit=${LIMIT}&offset=${OFFSET}&concurrency=${CONCURRENCY}"
-            echo "=== Batch ${BATCH} ==="
+            echo "=== Batch ${BATCH} year=${YEAR} offset=${OFFSET} ==="
             HTTP=$(curl -sS -o /tmp/sync-stats.json -w "%{http_code}" "${AUTH[@]}" "$URL")
             if [ "$HTTP" != "200" ]; then
               echo "::error::HTTP ${HTTP}"
@@ -121,7 +129,7 @@ jobs:
             TOTAL=$(jq -r '.total_players' /tmp/sync-stats.json)
             PLAYERS=$(jq -r '.players' /tmp/sync-stats.json)
             ROWS=$(jq -r '.stats_rows' /tmp/sync-stats.json)
-            echo "players_in_batch=${PLAYERS} stats_rows=${ROWS} next_offset=${NEXT} total_players=${TOTAL}"
+            echo "year=${YEAR} players_in_batch=${PLAYERS} stats_rows=${ROWS} next_offset=${NEXT} total_players=${TOTAL}"
             if [ "$NEXT" -ge "$TOTAL" ]; then
               echo "Complete."
               break

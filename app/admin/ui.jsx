@@ -314,6 +314,62 @@ export default function AdminClient() {
     }
   }
 
+  /** Same behavior as `.github/workflows/sync-playoff-stats.yml`: chain batches until done. */
+  async function runStatsFullChain() {
+    setRunning("stats");
+    setResult(null);
+    setError(null);
+    const headers = adminPassword ? { "x-admin-password": adminPassword } : {};
+    const year = CURRENT_POOL_PLAYOFF_YEAR;
+    const limit = statsLimit;
+    const conc = statsConcurrency;
+    let offset = 0;
+    const batches = [];
+    try {
+      while (true) {
+        const url = `/api/sync-stats?year=${year}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&concurrency=${encodeURIComponent(conc)}`;
+        const res = await fetch(url, { method: "GET", headers });
+        const json = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
+        }
+        if (!json?.ok) {
+          throw new Error(json?.error || "sync-stats returned ok=false");
+        }
+        batches.push(json);
+        const next = Number(json.next_offset);
+        const total = Number(json.total_players);
+        if (!Number.isFinite(next) || !Number.isFinite(total)) {
+          throw new Error("sync-stats response missing next_offset or total_players");
+        }
+        if (next >= total) {
+          break;
+        }
+        offset = next;
+      }
+      setStatsOffset(0);
+      setResult({
+        ok: true,
+        chained: true,
+        year,
+        batches_run: batches.length,
+        last_batch: batches[batches.length - 1],
+        batch_log: batches.map((b, i) => ({
+          batch: i + 1,
+          offset: b.offset,
+          players_in_batch: b.players,
+          stats_rows: b.stats_rows,
+          next_offset: b.next_offset,
+          total_players: b.total_players,
+        })),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(null);
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
       <h1 className="text-2xl font-black tracking-tight">Admin</h1>
@@ -627,11 +683,14 @@ export default function AdminClient() {
             Playoff stats (NHL)
           </div>
           <p className="text-xs text-zinc-600">
-            Batched sync from NHL playoff game logs. After each batch, use{" "}
-            <code className="rounded bg-zinc-100 px-1">next_offset</code> in the
-            response and run again until finished. During the playoffs, run
-            daily (or automate with GitHub Actions). Keep concurrency low to avoid
-            rate limits.
+            Batched sync from NHL playoff game logs.{" "}
+            <span className="font-semibold text-zinc-800">
+              Sync all playoff stats
+            </span>{" "}
+            chains batches the same way as the GitHub Actions workflow (offset 0,
+            then <code className="rounded bg-zinc-100 px-1">next_offset</code> until
+            done). During the playoffs you can also run daily via Actions. Keep
+            concurrency low to avoid rate limits.
           </p>
           <p className="rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700 ring-1 ring-zinc-200">
             <span className="font-semibold text-zinc-900">Limit</span> and{" "}
@@ -639,8 +698,8 @@ export default function AdminClient() {
             stored per season in{" "}
             <code className="rounded bg-white px-1">pool_settings</code> when you
             click <span className="font-semibold">Save pool settings</span> above.
-            <span className="font-semibold"> Offset</span> is not saved (session-only
-            for stepping through batches).
+            <span className="font-semibold"> Offset</span> is only for the optional
+            single-batch run below.
           </p>
           <div className="flex flex-col gap-2">
             <span className="text-xs font-medium text-zinc-700">
@@ -713,19 +772,29 @@ export default function AdminClient() {
               />
             </label>
             <button
+              className="w-fit rounded-xl border border-black/10 bg-[#163a59] px-4 py-2 text-sm font-semibold text-white hover:bg-[#12324d] disabled:opacity-50"
+              type="button"
+              disabled={!!running}
+              onClick={() => runStatsFullChain()}
+            >
+              {running === "stats"
+                ? "Syncing all playoff stats…"
+                : "Sync all playoff stats (NHL → Supabase)"}
+            </button>
+            <button
               className="w-fit rounded-xl border border-black/10 px-4 py-2 text-sm hover:bg-black/[.02] disabled:opacity-50"
               type="button"
               disabled={!!running}
               onClick={() =>
                 run(
-                  "stats",
+                  "stats-batch",
                   `/api/sync-stats?year=${CURRENT_POOL_PLAYOFF_YEAR}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
                 )
               }
             >
-              {running === "stats"
-                ? "Syncing stats…"
-                : "Sync playoff stats (NHL → Supabase)"}
+              {running === "stats-batch"
+                ? "Syncing one batch…"
+                : "One batch only (use offset above)"}
             </button>
           </div>
         </div>
