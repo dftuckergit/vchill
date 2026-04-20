@@ -12,9 +12,13 @@ function compareRoundTitle(poolRound) {
   return "ROUND 3 + 4";
 }
 
-/** One “screen” of round content when horizontally scrolling on small viewports. */
+/**
+ * Mobile: each round column is exactly (main scroll strip − frozen slot column).
+ * The rounds scroller sets [container-type:inline-size]; 100cqw = that width
+ * (same inset as standings: main px-6 + max-w-3xl, no full-bleed tricks).
+ */
 const ROUND_COL_MIN_MOBILE =
-  "max-md:min-w-[min(22rem,calc(100vw-3.75rem))] md:min-w-0";
+  "max-md:min-w-[calc(100cqw_-_3.5rem)] max-md:max-w-none max-md:shrink-0 md:min-w-0";
 
 function PointsWithStar({ pointsText, showStar, muted }) {
   const tone = muted ? "text-zinc-400" : "text-zinc-900";
@@ -36,8 +40,8 @@ function PointsWithStar({ pointsText, showStar, muted }) {
 function PickCell({ pick, picksRevealed, showSoloBrain = false }) {
   if (!picksRevealed) {
     return (
-      <div className="flex min-w-0 items-baseline text-sm">
-        <span className="min-w-0 flex-1 truncate text-left text-zinc-400">
+      <div className="flex min-w-0 items-baseline gap-x-2 text-sm">
+        <span className="min-w-0 flex-1 break-words text-left [overflow-wrap:anywhere] text-zinc-400">
           —
         </span>
         <PointsWithStar pointsText="—" showStar={false} muted />
@@ -46,8 +50,8 @@ function PickCell({ pick, picksRevealed, showSoloBrain = false }) {
   }
   if (!pick) {
     return (
-      <div className="flex min-w-0 items-baseline text-sm">
-        <span className="min-w-0 flex-1 truncate text-left text-zinc-400">
+      <div className="flex min-w-0 items-baseline gap-x-2 text-sm">
+        <span className="min-w-0 flex-1 break-words text-left [overflow-wrap:anywhere] text-zinc-400">
           —
         </span>
         <PointsWithStar pointsText="—" showStar={false} muted />
@@ -56,8 +60,8 @@ function PickCell({ pick, picksRevealed, showSoloBrain = false }) {
   }
   const hex = teamPrimaryHex(pick.team_abbrev);
   return (
-    <div className="flex min-w-0 items-baseline text-sm">
-      <span className="min-w-0 flex-1 truncate text-zinc-900">
+    <div className="flex min-w-0 items-baseline gap-x-2 text-sm">
+      <span className="min-w-0 flex-1 break-words text-left [overflow-wrap:anywhere] text-zinc-900">
         <span
           className="font-bold"
           style={hex ? { color: hex } : { color: "#18181b" }}
@@ -107,20 +111,20 @@ function RoundsSummaryTable({
   );
 
   return (
-    <div className="mx-auto mt-10 w-full max-w-5xl max-md:-mx-6 max-md:px-6 md:mx-auto md:px-0">
-      <div className="overflow-x-auto md:overflow-x-visible [-webkit-overflow-scrolling:touch]">
+    <div className="mx-auto mt-10 w-full min-w-0 max-w-5xl text-left">
+      <div className="overflow-x-auto rounded-md [-webkit-overflow-scrolling:touch] [container-type:inline-size] max-md:w-full md:overflow-x-visible">
         <table className="w-full border-collapse text-left text-sm max-md:w-max md:table-fixed">
           <thead>
             <tr>
               <th
                 scope="col"
-                className="sticky left-0 z-[1] w-14 bg-white pb-3 pr-2 align-bottom text-xs font-black tracking-wide text-zinc-900 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:w-16 md:shadow-none"
+                className="sticky left-0 z-[1] w-14 min-w-[3.5rem] max-w-[3.5rem] bg-white pb-3 pr-2 align-bottom text-xs font-black tracking-wide text-zinc-900 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:w-16 md:min-w-0 md:max-w-none md:shadow-none"
               />
               {roundDefs.map((r, ri) => (
                 <th
                   key={r.key}
                   scope="col"
-                  className={`${ROUND_COL_MIN_MOBILE} pb-3 pl-2 align-bottom text-xs font-black tracking-wide text-zinc-900 md:pl-2 ${
+                  className={`${ROUND_COL_MIN_MOBILE} pb-3 pl-2 align-bottom text-xs font-black tracking-wide text-zinc-900 max-md:whitespace-normal md:pl-2 ${
                     ri < roundDefs.length - 1 ? "max-md:pr-4 md:pr-8" : "pr-2"
                   }`}
                 >
@@ -139,7 +143,7 @@ function RoundsSummaryTable({
             <tr key={`slot-${i}`} className="border-b border-zinc-100">
               <th
                 scope="row"
-                className="sticky left-0 z-[1] bg-white py-2 pr-2 align-baseline text-left text-xs font-semibold text-zinc-500 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:shadow-none"
+                className="sticky left-0 z-[1] w-14 min-w-[3.5rem] max-w-[3.5rem] bg-white py-2 pr-2 align-baseline text-left text-xs font-semibold text-zinc-500 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:w-16 md:min-w-0 md:max-w-none md:shadow-none"
               >
                 {label}
               </th>
@@ -166,7 +170,7 @@ function RoundsSummaryTable({
           <tr className="border-t border-zinc-200">
             <th
               scope="row"
-              className="sticky left-0 z-[1] bg-white pt-3 pr-2 text-left text-sm font-black text-zinc-900 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:shadow-none"
+              className="sticky left-0 z-[1] w-14 min-w-[3.5rem] max-w-[3.5rem] bg-white pt-3 pr-2 text-left text-sm font-black text-zinc-900 max-md:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)] md:static md:z-auto md:w-16 md:min-w-0 md:max-w-none md:shadow-none"
             >
               TOTAL
             </th>

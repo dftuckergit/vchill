@@ -134,7 +134,7 @@ export default async function TeamPage({ params }) {
 
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
-      <div className="w-full max-w-3xl text-center">
+      <div className="w-full min-w-0 max-w-3xl text-center">
         <h1 className="text-[32px] leading-[1.0] font-black text-[#163a59]">
           {displayName}
         </h1>
