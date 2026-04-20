@@ -7,7 +7,14 @@
 # Off-season: disable this workflow in GitHub (Actions → workflow → … → Disable) or remove the schedule so
 # offset=0 is not run daily (first batch wipes that season’s stats before re-importing).
 #
-# Default NHL playoff `year` must match the app pool year (`CURRENT_POOL_PLAYOFF_YEAR` in lib/current-pool.js).
+# NHL `year` query param is taken from lib/current-pool.js (CURRENT_POOL_PLAYOFF_YEAR) unless you override
+# it in workflow_dispatch — must match the season your `players` rows use or sync will target the wrong year
+# (empty batches / stats not matching the pool).
+#
+# If stats still do not update on the schedule:
+# - Repo → Settings → Actions → General: allow Actions; scheduled workflows only run from the default branch.
+# - Add secret STATS_SYNC_BASE_URL (no trailing slash). If SYNC_STATS_SECRET is set on Vercel, set the same value here.
+# - HTTP 401 in logs: secret mismatch or missing Bearer auth.
 
 name: Sync playoff stats
 
@@ -18,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: "NHL playoff year (query param year=)"
+        description: "NHL playoff year override (leave empty to use lib/current-pool.js)"
         required: false
-        default: "2026"
+        default: ""
       limit:
         description: "Players per batch (keep small for Vercel ~60s limit)"
         required: false
@@ -30,22 +37,33 @@ on:
         required: false
         default: "1"
 
+# Do not cancel a long multi-batch run when another workflow starts (would leave stats partially synced).
 concurrency:
   group: sync-playoff-stats-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
+      - uses: actions/checkout@v4
+
+      # workflow_dispatch only — avoids referencing github.event.inputs on schedule
+      - name: Export manual run inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "DISPATCH_YEAR=${{ github.event.inputs.year }}" >> "$GITHUB_ENV"
+          echo "DISPATCH_LIMIT=${{ github.event.inputs.limit }}" >> "$GITHUB_ENV"
+          echo "DISPATCH_CONCURRENCY=${{ github.event.inputs.concurrency }}" >> "$GITHUB_ENV"
+
       - name: Chain sync-stats batches
         env:
           STATS_SYNC_BASE_URL: ${{ secrets.STATS_SYNC_BASE_URL }}
           SYNC_STATS_SECRET: ${{ secrets.SYNC_STATS_SECRET }}
-          INPUT_YEAR: ${{ github.event.inputs.year }}
-          INPUT_LIMIT: ${{ github.event.inputs.limit }}
-          INPUT_CONCURRENCY: ${{ github.event.inputs.concurrency }}
         run: |
           set -euo pipefail
           BASE="${STATS_SYNC_BASE_URL%/}"
@@ -54,10 +72,20 @@ jobs:
             exit 1
           fi
 
-          YEAR="${INPUT_YEAR:-}"
-          LIMIT="${INPUT_LIMIT:-}"
-          CONCURRENCY="${INPUT_CONCURRENCY:-}"
-          [ -z "$YEAR" ] && YEAR=2026
+          POOL_YEAR=$(sed -n 's/.*CURRENT_POOL_PLAYOFF_YEAR = \([0-9][0-9]*\).*/\1/p' lib/current-pool.js | head -1)
+          if [ -z "${POOL_YEAR}" ]; then
+            echo "::error::Could not read CURRENT_POOL_PLAYOFF_YEAR from lib/current-pool.js"
+            exit 1
+          fi
+
+          YEAR="$(echo "${DISPATCH_YEAR:-}" | xargs)"
+          if [ -z "$YEAR" ]; then
+            YEAR="${POOL_YEAR}"
+          fi
+          echo "NHL playoff year=${YEAR} (pool file had ${POOL_YEAR}; empty manual year → use pool file)"
+
+          LIMIT="$(echo "${DISPATCH_LIMIT:-}" | xargs)"
+          CONCURRENCY="$(echo "${DISPATCH_CONCURRENCY:-}" | xargs)"
           [ -z "$LIMIT" ] && LIMIT=8
           [ -z "$CONCURRENCY" ] && CONCURRENCY=1
 
@@ -77,6 +105,9 @@ jobs:
             HTTP=$(curl -sS -o /tmp/sync-stats.json -w "%{http_code}" "${AUTH[@]}" "$URL")
             if [ "$HTTP" != "200" ]; then
               echo "::error::HTTP ${HTTP}"
+              if [ "$HTTP" = "401" ]; then
+                echo "::error::Unauthorized — set repository secret SYNC_STATS_SECRET to match Vercel Production SYNC_STATS_SECRET (or leave both unset)."
+              fi
               cat /tmp/sync-stats.json
               exit 1
             fi
