@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CURRENT_POOL_PLAYOFF_YEAR } from "@/lib/current-pool";
 import { playoffYearToSeasonId } from "@/lib/nhl/season";
 import {
   utcIsoToEasternDatetimeLocalInput,
   easternDatetimeLocalInputToUtcIso,
+  formatViewerLocalDateTimeWithZone,
 } from "@/lib/deadline-timezone";
 
 function teamSetFromSettings(arr) {
@@ -107,9 +108,6 @@ export default function AdminClient() {
     () => playoffYearToSeasonId(CURRENT_POOL_PLAYOFF_YEAR),
     []
   );
-  const [statsLimit, setStatsLimit] = useState(8);
-  const [statsOffset, setStatsOffset] = useState(0);
-  const [statsConcurrency, setStatsConcurrency] = useState(1);
   const [regLimit, setRegLimit] = useState(25);
   const [regOffset, setRegOffset] = useState(0);
   const [running, setRunning] = useState(null);
@@ -130,6 +128,52 @@ export default function AdminClient() {
   const [eligibleR3, setEligibleR3] = useState(() => new Set());
   const [playoffEligibleTeams, setPlayoffEligibleTeams] = useState([]);
   const [playoffEligibleStatus, setPlayoffEligibleStatus] = useState("loading");
+  const [statsSyncStatus, setStatsSyncStatus] = useState(null);
+  const [statsSyncStatusError, setStatsSyncStatusError] = useState(null);
+
+  const STATS_LIMIT = 50;
+  const STATS_CONCURRENCY = 1;
+
+  const loadStatsSyncStatus = useCallback(async () => {
+    setStatsSyncStatusError(null);
+    try {
+      const res = await fetch(
+        `/api/stats-sync-status?season=${encodeURIComponent(season)}`,
+        { method: "GET" }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      setStatsSyncStatus(json.status ?? null);
+    } catch (e) {
+      setStatsSyncStatusError(e instanceof Error ? e.message : String(e));
+      setStatsSyncStatus(null);
+    }
+  }, [season]);
+
+  const writeStatsSyncStatus = useCallback(
+    async (patch) => {
+    try {
+      const res = await fetch("/api/stats-sync-status", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ season, ...patch }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      // Re-read via GET so we also get computed percent_processed.
+      await loadStatsSyncStatus();
+      return true;
+    } catch (e) {
+      setStatsSyncStatusError(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+    },
+    [loadStatsSyncStatus, season]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -184,17 +228,6 @@ export default function AdminClient() {
             )
           )
         );
-        setStatsLimit(
-          Number.isFinite(Number(s.stats_sync_limit)) && s.stats_sync_limit >= 1
-            ? Math.min(100, Math.round(Number(s.stats_sync_limit)))
-            : 8
-        );
-        setStatsConcurrency(
-          Number.isFinite(Number(s.stats_sync_concurrency)) &&
-            s.stats_sync_concurrency >= 1
-            ? Math.min(10, Math.round(Number(s.stats_sync_concurrency)))
-            : 1
-        );
       } catch (e) {
         if (!cancelled) {
           setPoolLoadError(e instanceof Error ? e.message : String(e));
@@ -207,10 +240,11 @@ export default function AdminClient() {
       }
     }
     load();
+    loadStatsSyncStatus();
     return () => {
       cancelled = true;
     };
-  }, [season]);
+  }, [loadStatsSyncStatus, season]);
 
   async function savePoolSettings() {
     setPoolSaving(true);
@@ -277,14 +311,6 @@ export default function AdminClient() {
       if (json?.settings) {
         const s = json.settings;
         setPaymentDeadline(utcIsoToEasternDatetimeLocalInput(s.payment_deadline_at));
-        if (s.stats_sync_limit != null)
-          setStatsLimit(
-            Math.max(1, Math.min(100, Math.round(Number(s.stats_sync_limit))))
-          );
-        if (s.stats_sync_concurrency != null)
-          setStatsConcurrency(
-            Math.max(1, Math.min(10, Math.round(Number(s.stats_sync_concurrency))))
-          );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -319,16 +345,25 @@ export default function AdminClient() {
     setRunning("stats");
     setResult(null);
     setError(null);
-    const headers = adminPassword ? { "x-admin-password": adminPassword } : {};
     const year = CURRENT_POOL_PLAYOFF_YEAR;
-    const limit = statsLimit;
-    const conc = statsConcurrency;
+    const limit = STATS_LIMIT;
+    const conc = STATS_CONCURRENCY;
     let offset = 0;
     const batches = [];
     try {
+      const startedAt = new Date().toISOString();
+      await writeStatsSyncStatus({
+        stats_last_sync_started_at: startedAt,
+        stats_last_sync_completed_at: null,
+        stats_last_sync_total_players: null,
+        stats_last_sync_processed_players: 0,
+        stats_last_sync_ok: null,
+        stats_last_sync_error: null,
+      });
+
       while (true) {
         const url = `/api/sync-stats?year=${year}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&concurrency=${encodeURIComponent(conc)}`;
-        const res = await fetch(url, { method: "GET", headers });
+        const res = await fetch(url, { method: "GET" });
         const json = await res.json().catch(() => null);
         if (!res.ok) {
           throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
@@ -342,12 +377,25 @@ export default function AdminClient() {
         if (!Number.isFinite(next) || !Number.isFinite(total)) {
           throw new Error("sync-stats response missing next_offset or total_players");
         }
+
+        await writeStatsSyncStatus({
+          stats_last_sync_total_players: total,
+          stats_last_sync_processed_players: next,
+        });
+
         if (next >= total) {
           break;
         }
         offset = next;
       }
-      setStatsOffset(0);
+
+      const completedAt = new Date().toISOString();
+      await writeStatsSyncStatus({
+        stats_last_sync_completed_at: completedAt,
+        stats_last_sync_ok: true,
+        stats_last_sync_error: null,
+      });
+
       setResult({
         ok: true,
         chained: true,
@@ -364,38 +412,114 @@ export default function AdminClient() {
         })),
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      const completedAt = new Date().toISOString();
+      await writeStatsSyncStatus({
+        stats_last_sync_completed_at: completedAt,
+        stats_last_sync_ok: false,
+        stats_last_sync_error: msg,
+      });
     } finally {
       setRunning(null);
     }
   }
 
+  const statsStatusText = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const completedAt = statsSyncStatus?.stats_last_sync_completed_at;
+    if (!completedAt) return "";
+    return formatViewerLocalDateTimeWithZone(completedAt);
+  }, [statsSyncStatus?.stats_last_sync_completed_at]);
+
+  const statsPercentText = useMemo(() => {
+    const total = Number(statsSyncStatus?.stats_last_sync_total_players);
+    const processed = Number(statsSyncStatus?.stats_last_sync_processed_players);
+    if (!Number.isFinite(total) || total <= 0) return null;
+    const safeProcessed = Number.isFinite(processed) ? processed : 0;
+    const pct = Math.max(0, Math.min(1, safeProcessed / total));
+    const pctStr = `${Math.round(pct * 100)}%`;
+    return `${pctStr} (${Math.max(0, safeProcessed)} / ${total})`;
+  }, [
+    statsSyncStatus?.stats_last_sync_total_players,
+    statsSyncStatus?.stats_last_sync_processed_players,
+  ]);
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
       <h1 className="text-2xl font-black tracking-tight">Admin</h1>
-      <p className="mt-3 text-sm text-zinc-600">
-        Set the season, load roster data, keep the participant list current,
-        configure each pool round, then sync playoff stats as games finish.
-      </p>
+      <p className="mt-3 text-sm text-zinc-600">Commissioner tools.</p>
 
       <div className="mt-8 flex flex-col gap-6">
-        {/* 1. Season */}
+        {/* 1. Playoff stats */}
         <div className="flex flex-col gap-3 rounded-xl border border-black/10 p-4">
-          <div className="text-sm font-black text-zinc-900">Season</div>
-          <p className="text-xs text-zinc-600">
-            All NHL syncs on this page use the{" "}
-            <span className="font-semibold text-zinc-800">
-              {CURRENT_POOL_PLAYOFF_YEAR} playoffs
+          <div className="text-sm font-black text-zinc-900">
+            Playoff stats (NHL → Supabase)
+          </div>
+          <button
+            className="w-fit rounded-xl border border-black/10 bg-[#163a59] px-4 py-2 text-sm font-semibold text-white hover:bg-[#12324d] disabled:opacity-50"
+            type="button"
+            disabled={!!running}
+            onClick={() => runStatsFullChain()}
+          >
+            {running === "stats"
+              ? "Syncing all playoff stats…"
+              : "Sync all playoff stats"}
+          </button>
+          <p className="text-xs text-zinc-500">
+            Uses year{" "}
+            <span className="font-semibold text-zinc-700">
+              {CURRENT_POOL_PLAYOFF_YEAR}
             </span>{" "}
-            (Supabase{" "}
-            <code className="rounded bg-zinc-100 px-1 font-mono">{season}</code>
-            ). To switch next year, change{" "}
-            <code className="rounded bg-zinc-100 px-1 font-mono">
-              CURRENT_POOL_PLAYOFF_YEAR
-            </code>{" "}
-            in{" "}
-            <code className="rounded bg-zinc-100 px-1">lib/current-pool.js</code>.
+            (season{" "}
+            <code className="rounded bg-zinc-100 px-1 font-mono">{season}</code>).
+            Batch settings are fixed:{" "}
+            <span className="font-semibold text-zinc-700">
+              limit {STATS_LIMIT}, concurrency {STATS_CONCURRENCY}
+            </span>
+            .
           </p>
+          <div className="rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700 ring-1 ring-zinc-200">
+            <div className="flex flex-col gap-1">
+              <div>
+                <span className="font-semibold text-zinc-900">Last sync:</span>{" "}
+                {statsSyncStatus?.stats_last_sync_completed_at ? (
+                  <span
+                    suppressHydrationWarning
+                    className="text-zinc-700 tabular-nums"
+                  >
+                    {statsStatusText || "\u00A0"}
+                  </span>
+                ) : (
+                  <span className="text-zinc-500">—</span>
+                )}
+              </div>
+              <div>
+                <span className="font-semibold text-zinc-900">Processed:</span>{" "}
+                {statsPercentText ? (
+                  <span className="tabular-nums">{statsPercentText}</span>
+                ) : (
+                  <span className="text-zinc-500">—</span>
+                )}
+                {statsSyncStatus?.stats_last_sync_ok === true ? (
+                  <span className="ml-2 text-emerald-700">ok</span>
+                ) : statsSyncStatus?.stats_last_sync_ok === false ? (
+                  <span className="ml-2 text-red-700">failed</span>
+                ) : null}
+              </div>
+              {statsSyncStatus?.stats_last_sync_ok === false &&
+              statsSyncStatus?.stats_last_sync_error ? (
+                <div className="text-red-700">
+                  {String(statsSyncStatus.stats_last_sync_error)}
+                </div>
+              ) : null}
+              {statsSyncStatusError ? (
+                <div className="text-amber-800">
+                  Sync status unavailable: {statsSyncStatusError}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         {/* 2. Roster and regular season */}
@@ -674,128 +798,6 @@ export default function AdminClient() {
                 {JSON.stringify(poolSaveResult, null, 2)}
               </pre>
             ) : null}
-          </div>
-        </div>
-
-        {/* 5. Playoff stats */}
-        <div className="flex flex-col gap-4 rounded-xl border border-black/10 p-4">
-          <div className="text-sm font-black text-zinc-900">
-            Playoff stats (NHL)
-          </div>
-          <p className="text-xs text-zinc-600">
-            Batched sync from NHL playoff game logs.{" "}
-            <span className="font-semibold text-zinc-800">
-              Sync all playoff stats
-            </span>{" "}
-            chains batches the same way as the GitHub Actions workflow (offset 0,
-            then <code className="rounded bg-zinc-100 px-1">next_offset</code> until
-            done). During the playoffs you can also run daily via Actions. Keep
-            concurrency low to avoid rate limits.
-          </p>
-          <p className="rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-700 ring-1 ring-zinc-200">
-            <span className="font-semibold text-zinc-900">Limit</span> and{" "}
-            <span className="font-semibold text-zinc-900">concurrency</span> are
-            stored per season in{" "}
-            <code className="rounded bg-white px-1">pool_settings</code> when you
-            click <span className="font-semibold">Save pool settings</span> above.
-            <span className="font-semibold"> Offset</span> is only for the optional
-            single-batch run below.
-          </p>
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-zinc-700">
-              Limit presets (players per batch)
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {[8, 15, 25, 50].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-50"
-                  onClick={() => setStatsLimit(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-zinc-700">
-              Concurrency presets
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {[1, 2].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-50"
-                  onClick={() => setStatsConcurrency(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <label className="text-sm text-zinc-700">
-              Limit
-              <input
-                className="ml-2 w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                inputMode="numeric"
-                value={statsLimit}
-                onChange={(e) =>
-                  setStatsLimit(
-                    Math.max(1, Math.min(100, Number(e.target.value) || 1))
-                  )
-                }
-              />
-            </label>
-            <label className="text-sm text-zinc-700">
-              Offset
-              <input
-                className="ml-2 w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                inputMode="numeric"
-                value={statsOffset}
-                onChange={(e) => setStatsOffset(Number(e.target.value || 0))}
-              />
-            </label>
-            <label className="text-sm text-zinc-700">
-              Concurrency
-              <input
-                className="ml-2 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                inputMode="numeric"
-                value={statsConcurrency}
-                onChange={(e) =>
-                  setStatsConcurrency(
-                    Math.max(1, Math.min(10, Number(e.target.value) || 1))
-                  )
-                }
-              />
-            </label>
-            <button
-              className="w-fit rounded-xl border border-black/10 bg-[#163a59] px-4 py-2 text-sm font-semibold text-white hover:bg-[#12324d] disabled:opacity-50"
-              type="button"
-              disabled={!!running}
-              onClick={() => runStatsFullChain()}
-            >
-              {running === "stats"
-                ? "Syncing all playoff stats…"
-                : "Sync all playoff stats (NHL → Supabase)"}
-            </button>
-            <button
-              className="w-fit rounded-xl border border-black/10 px-4 py-2 text-sm hover:bg-black/[.02] disabled:opacity-50"
-              type="button"
-              disabled={!!running}
-              onClick={() =>
-                run(
-                  "stats-batch",
-                  `/api/sync-stats?year=${CURRENT_POOL_PLAYOFF_YEAR}&limit=${statsLimit}&offset=${statsOffset}&concurrency=${statsConcurrency}`
-                )
-              }
-            >
-              {running === "stats-batch"
-                ? "Syncing one batch…"
-                : "One batch only (use offset above)"}
-            </button>
           </div>
         </div>
 
