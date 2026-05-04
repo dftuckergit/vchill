@@ -85,12 +85,10 @@ Living doc: **verify in repo** if behavior drifts. Repo root: `vchill-pool/`. Fo
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` | Yes | same | Publishable key (**not** named `ANON_KEY`) |
 | `PARTICIPANTS_SHEET_URL` | For participant sync | [`lib/participants/sheet.js`](lib/participants/sheet.js) | Public CSV URL (`fetch`, `cache: "no-store"`) |
 | `ADMIN_PASSWORD` | For `PUT /api/pool-settings` | [`app/api/pool-settings/route.js`](app/api/pool-settings/route.js) | Missing → **503** on PUT |
-| `ADMIN_PASSWORD` | Optional auth for `GET /api/sync-stats` | [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) | When `SYNC_STATS_SECRET` set: header `x-admin-password` must match |
-| `SYNC_STATS_SECRET` | Optional | [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js) | If set: `GET /api/sync-stats` requires Bearer, `x-sync-stats-secret`, or matching `x-admin-password` |
 | `NEXT_PUBLIC_SITE_URL` | Optional | [`app/layout.jsx`](app/layout.jsx) | `metadataBase` for OG/Twitter |
 | `VERCEL_URL` | On Vercel | [`app/layout.jsx`](app/layout.jsx) | Fallback host for `metadataBase` |
 
-**GitHub Actions:** repo secrets **`STATS_SYNC_BASE_URL`**, **`SYNC_STATS_SECRET`** — [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml).
+**GitHub Actions:** repo secrets **`STATS_SYNC_BASE_URL`**, **`SYNC_STATS_SECRET`** — [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml). (Note: `SYNC_STATS_SECRET` no longer gates `/api/sync-stats`; it’s effectively unused unless you re-add auth.)
 
 Do **not** commit `.env*`.
 
@@ -108,9 +106,9 @@ Do **not** commit `.env*`.
 | `players` | `id`, `nhl_id`, `name`, `team`, `team_abbrev`, `position`, `conference`, `salary`, `season`, `season_points` — sync, picker, FK from `picks.player_id`. |
 | `picks` | `participant_id`, `player_id`, `round` (1–3; legacy **4** = pool round 3), `season` (8-char **text**), `is_star`, `submitted_at`. |
 | `stats` | `nhl_id`, `season`, `round` (NHL 1–4), goals/assists + optional goalie columns (`goalie_wins`, shutout variants — detected via tiny probe inserts in [`app/api/sync-stats/route.js`](app/api/sync-stats/route.js); **named** goalie/shutout pairs are tried before a minimal goals-only row so wins/shutouts are not skipped on nullable schemas). `created_at` for “last updated” on standings — see [`sql/stats_created_at.sql`](sql/stats_created_at.sql) if column missing. |
-| `pool_settings` | PK `season`; `current_round` 1–3; `deadline_r1`–`deadline_r3`; `payment_deadline_at`; `eligible_teams_r1`–`r3` (`text[]`); `stats_sync_limit`, `stats_sync_concurrency`; `updated_at` — [`lib/pool-settings.js`](lib/pool-settings.js). |
+| `pool_settings` | PK `season`; `current_round` 1–3; `deadline_r1`–`deadline_r3`; `payment_deadline_at`; `eligible_teams_r1`–`r3` (`text[]`); `stats_sync_limit`, `stats_sync_concurrency`; **stats sync status fields** (`stats_last_sync_*`); `updated_at` — [`lib/pool-settings.js`](lib/pool-settings.js). |
 
-**SQL helpers (no `supabase/migrations` in repo):** run in Supabase SQL editor as needed — [`sql/pool_settings.sql`](sql/pool_settings.sql), [`sql/pool_settings_eligible_teams.sql`](sql/pool_settings_eligible_teams.sql), [`sql/pool_settings_stats_sync_defaults.sql`](sql/pool_settings_stats_sync_defaults.sql), [`sql/pool_settings_payment_deadline.sql`](sql/pool_settings_payment_deadline.sql), [`sql/participants_bio_columns.sql`](sql/participants_bio_columns.sql), [`sql/stats_created_at.sql`](sql/stats_created_at.sql).
+**SQL helpers (no `supabase/migrations` in repo):** run in Supabase SQL editor as needed — [`sql/pool_settings.sql`](sql/pool_settings.sql), [`sql/pool_settings_eligible_teams.sql`](sql/pool_settings_eligible_teams.sql), [`sql/pool_settings_stats_sync_defaults.sql`](sql/pool_settings_stats_sync_defaults.sql), [`sql/pool_settings_stats_sync_status.sql`](sql/pool_settings_stats_sync_status.sql), [`sql/pool_settings_payment_deadline.sql`](sql/pool_settings_payment_deadline.sql), [`sql/participants_bio_columns.sql`](sql/participants_bio_columns.sql), [`sql/stats_created_at.sql`](sql/stats_created_at.sql).
 
 **Gotchas**
 
@@ -131,7 +129,9 @@ Common errors: JSON `{ ok: false, error }` or `{ ok: false, step, error }`.
 | `GET` | `/api/sync-participants` | None | — | CSV → upsert `participants` | `500` (URL/sheet/DB) |
 | `GET` | `/api/sync-players` | None | `year` (default **`2025`** in code if omitted), `extra_teams` | Replace `players` for bracket season + extras | `500` |
 | `GET` | `/api/playoff-teams` | None | **`year`** required | `{ ok, year, season, teams }` | `400`, `502` |
-| `GET` | `/api/sync-stats` | If `SYNC_STATS_SECRET`: Bearer / `x-sync-stats-secret` / `x-admin-password` | `year` (default **`2025`** in code if omitted), `limit`, `offset` (default `0`), `concurrency` (default **`2`**, clamp 1–10) | Batch insert `stats`; **`offset=0`** wipes season `stats` | `401`, `500` |
+| `GET` | `/api/sync-stats` | None | `year` (default **`2025`** in code if omitted), `limit`, `offset` (default `0`), `concurrency` (default **`2`**, clamp 1–10) | Batch insert `stats`; **`offset=0`** wipes season `stats` | `500` |
+| `GET` | `/api/stats-sync-status` | None | **`season`** required | Read last sync timestamp + progress from `pool_settings.stats_last_sync_*` | `400`, `500` |
+| `PUT` | `/api/stats-sync-status` | None | JSON: `season` + any `stats_last_sync_*` fields | Upsert last sync timestamp + progress into `pool_settings` | `400`, `500` |
 | `GET` | `/api/sync-regular-season` | None | `year`, `limit`, `offset`, `concurrency` (see route) | Updates `players.season_points` | `500` |
 | `GET` | `/api/pool-settings` | None | **`season`** required | `{ ok, settings }` | `400`, `500` |
 | `PUT` | `/api/pool-settings` | `ADMIN_PASSWORD` via `x-admin-password` or body `admin_password` | JSON: `season`, `current_round`, `deadline_r1`–`r3`, optional `payment_deadline_at`, `eligible_teams_r*`, `stats_sync_*` | Upsert `pool_settings`; eligible lists ∩ bracket | `503`, `401`, `400`, `502`, `500` |
@@ -139,7 +139,7 @@ Common errors: JSON `{ ok: false, error }` or `{ ok: false, step, error }`.
 | `GET` | `/api/team-summary` | None | **`participant_id`**, **`season`** | `{ ok, summary }` from [`computeParticipantSummary`](lib/scoring.js) | `400`, `404`, `500` |
 | `GET` | `/api/check-pick-page` | None | **`pick_page_id`** — must match **`/^\d{6}$/`** | `{ ok: true }` if participant exists | `400`, `404`, `500` |
 
-**Admin UI** ([`app/admin/ui.jsx`](app/admin/ui.jsx)): sync buttons send `x-admin-password` when the password field is filled (needed for stats when `SYNC_STATS_SECRET` is set).
+**Admin UI** ([`app/admin/ui.jsx`](app/admin/ui.jsx)): playoff stats sync is a top-of-page button that runs a full chained import with **fixed** settings (**limit 50**, **concurrency 1**) and records progress via `/api/stats-sync-status`. Other admin actions (pool settings save) still use `ADMIN_PASSWORD`.
 
 **Note:** Admin passes **`year=CURRENT_POOL_PLAYOFF_YEAR`** (2026) into sync URLs. **`/api/sync-players`** and **`/api/sync-stats`** still default to **`year=2025`** if the query param is omitted (e.g. raw `curl`). GitHub scheduled workflow defaults **`year=2026`** — [`.github/workflows/sync-playoff-stats.yml`](.github/workflows/sync-playoff-stats.yml).
 

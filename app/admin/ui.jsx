@@ -296,8 +296,8 @@ export default function AdminClient() {
           eligibleR2.size > 0 ? [...eligibleR2].sort() : null,
         eligible_teams_r3:
           eligibleR3.size > 0 ? [...eligibleR3].sort() : null,
-        stats_sync_limit: statsLimit,
-        stats_sync_concurrency: statsConcurrency,
+        // Omit stats_sync_* so PUT /api/pool-settings keeps existing values
+        // (mergeStatsSyncFromPut only overwrites when keys are present).
         admin_password: adminPassword,
       };
       const res = await fetch("/api/pool-settings", {

@@ -103,7 +103,15 @@ export async function PUT(req) {
       .single();
 
     if (error) {
-      return Response.json({ ok: false, error: error.message }, { status: 500 });
+      const msg = error.message || "Unknown database error";
+      const missingColumnHint =
+        msg.toLowerCase().includes("column") && msg.toLowerCase().includes("does not exist")
+          ? "Your Supabase `pool_settings` table is missing the new stats sync status columns. Run `sql/pool_settings_stats_sync_status.sql` in the Supabase SQL editor, then retry."
+          : null;
+      return Response.json(
+        { ok: false, error: msg, ...(missingColumnHint ? { hint: missingColumnHint } : {}) },
+        { status: 500 }
+      );
     }
 
     const settings = normalizePoolSettingsRow(data ?? row);
