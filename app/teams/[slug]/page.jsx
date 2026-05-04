@@ -3,10 +3,7 @@ export const metadata = {
 };
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import {
-  arePicksVisibleAfterDeadline,
-  fetchPoolSettings,
-} from "@/lib/pool-settings";
+import { fetchPoolSettings, isRoundResultsPublic } from "@/lib/pool-settings";
 import { playerIdsWithSoloPickInRound } from "@/lib/analysis-player-metrics";
 import { computeParticipantSummary } from "@/lib/scoring";
 import TeamBio from "./TeamBio";
@@ -57,9 +54,9 @@ export default async function TeamPage({ params }) {
 
   const picksRevealedByRound = poolSettings
     ? {
-        1: arePicksVisibleAfterDeadline(poolSettings, 1),
-        2: arePicksVisibleAfterDeadline(poolSettings, 2),
-        3: arePicksVisibleAfterDeadline(poolSettings, 3),
+        1: isRoundResultsPublic(poolSettings, 1),
+        2: isRoundResultsPublic(poolSettings, 2),
+        3: isRoundResultsPublic(poolSettings, 3),
       }
     : { 1: true, 2: true, 3: true };
 

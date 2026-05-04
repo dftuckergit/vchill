@@ -5,10 +5,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import {
-  arePicksVisibleAfterDeadline,
-  fetchPoolSettings,
-} from "@/lib/pool-settings";
+import { fetchPoolSettings, isRoundResultsPublic } from "@/lib/pool-settings";
 import { normalizePlayerConference } from "@/lib/nhl/team-conference";
 import { getEligibleTeamAbbrevsForPickList } from "@/lib/playoff-pick-eligibility";
 import {
@@ -131,9 +128,9 @@ export default async function AnalysisPage() {
     }
   }
   const roundRevealed = {
-    1: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 1),
-    2: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 2),
-    3: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 3),
+    1: !poolSettings || isRoundResultsPublic(poolSettings, 1),
+    2: !poolSettings || isRoundResultsPublic(poolSettings, 2),
+    3: !poolSettings || isRoundResultsPublic(poolSettings, 3),
   };
   const initialPoolRound = [1, 2, 3].find((r) => roundRevealed[r]) ?? 1;
 

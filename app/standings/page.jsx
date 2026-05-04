@@ -7,10 +7,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { StandingsLastUpdated } from "../_components/StandingsLastUpdated";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import {
-  arePicksVisibleAfterDeadline,
-  fetchPoolSettings,
-} from "@/lib/pool-settings";
+import { fetchPoolSettings, isRoundResultsPublic } from "@/lib/pool-settings";
 import { computeStandingsRows } from "@/lib/scoring";
 
 export default async function StandingsPage() {
@@ -79,12 +76,9 @@ export default async function StandingsPage() {
       poolSettings = null;
     }
   }
-  const showR1 =
-    !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 1);
-  const showR2 =
-    !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 2);
-  const showR34 =
-    !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 3);
+  const showR1 = !poolSettings || isRoundResultsPublic(poolSettings, 1);
+  const showR2 = !poolSettings || isRoundResultsPublic(poolSettings, 2);
+  const showR34 = !poolSettings || isRoundResultsPublic(poolSettings, 3);
 
   const displayRows = rows
     .map((r) => {
