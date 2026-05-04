@@ -5,6 +5,10 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  arePicksVisibleAfterDeadline,
+  fetchPoolSettings,
+} from "@/lib/pool-settings";
 import { normalizePlayerConference } from "@/lib/nhl/team-conference";
 import { getEligibleTeamAbbrevsForPickList } from "@/lib/playoff-pick-eligibility";
 import {
@@ -118,6 +122,21 @@ export default async function AnalysisPage() {
     3: eligibleAbbrevsToJson(e3),
   };
 
+  let poolSettings = null;
+  if (season) {
+    try {
+      poolSettings = await fetchPoolSettings(supabase, season);
+    } catch {
+      poolSettings = null;
+    }
+  }
+  const roundRevealed = {
+    1: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 1),
+    2: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 2),
+    3: !poolSettings || arePicksVisibleAfterDeadline(poolSettings, 3),
+  };
+  const initialPoolRound = [1, 2, 3].find((r) => roundRevealed[r]) ?? 1;
+
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-12">
       <div className="w-full max-w-6xl">
@@ -133,6 +152,8 @@ export default async function AnalysisPage() {
           players={playersPayload}
           eligibleByRound={eligibleByRound}
           roundPickData={roundPickData}
+          roundRevealed={roundRevealed}
+          initialPoolRound={initialPoolRound}
         />
       </div>
     </main>

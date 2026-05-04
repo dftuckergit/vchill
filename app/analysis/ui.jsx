@@ -151,19 +151,29 @@ export default function AnalysisClient({
   players = [],
   eligibleByRound = { 1: null, 2: null, 3: null },
   roundPickData = { 1: {}, 2: {}, 3: {} },
+  roundRevealed = { 1: true, 2: true, 3: true },
+  initialPoolRound = 1,
 }) {
-  const [poolRound, setPoolRound] = useState(1);
+  const [poolRound, setPoolRound] = useState(initialPoolRound);
   const [conference, setConference] = useState("All");
   const [positionGroup, setPositionGroup] = useState("All");
   const [sortKey, setSortKey] = useState("picks");
   const [sortDir, setSortDir] = useState("desc");
   const [openPlayerId, setOpenPlayerId] = useState(null);
 
+  const anyRoundPublic =
+    roundRevealed[1] || roundRevealed[2] || roundRevealed[3];
+
+  /** If stored round is locked (e.g. settings changed), show first public round. */
+  const activePoolRound = roundRevealed[poolRound]
+    ? poolRound
+    : ([1, 2, 3].find((r) => roundRevealed[r]) ?? 1);
+
   const eligibleSet = useMemo(() => {
-    const arr = eligibleByRound?.[String(poolRound)];
+    const arr = eligibleByRound?.[String(activePoolRound)];
     if (!arr?.length) return null;
     return new Set(arr.map((a) => String(a).toUpperCase()));
-  }, [eligibleByRound, poolRound]);
+  }, [eligibleByRound, activePoolRound]);
 
   const eligibilityFiltered = useMemo(
     () => filterPlayersByTeamAbbrevs(players, eligibleSet),
@@ -187,10 +197,10 @@ export default function AnalysisClient({
   const sortedRows = useMemo(() => {
     const next = [...positionFiltered];
     next.sort((a, b) =>
-      compareAnalysisRows(a, b, sortKey, sortDir, poolRound, roundPickData),
+      compareAnalysisRows(a, b, sortKey, sortDir, activePoolRound, roundPickData),
     );
     return next;
-  }, [positionFiltered, sortKey, sortDir, poolRound, roundPickData]);
+  }, [positionFiltered, sortKey, sortDir, activePoolRound, roundPickData]);
 
   function onSortHeader(colKey) {
     if (sortKey === colKey) {
@@ -210,7 +220,7 @@ export default function AnalysisClient({
   }
 
   const ptsLabel =
-    poolRound === 1 ? "R1" : poolRound === 2 ? "R2" : "R3+4";
+    activePoolRound === 1 ? "R1" : activePoolRound === 2 ? "R2" : "R3+4";
 
   return (
     <div className="mt-8">
@@ -224,74 +234,98 @@ export default function AnalysisClient({
 
       {season ? (
         <>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <label className="flex items-center gap-2 text-sm font-semibold text-zinc-800">
-              <span className="shrink-0">Pool round</span>
-              <select
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm"
-                value={poolRound}
-                onChange={(e) => {
-                  setPoolRound(Number(e.target.value));
-                  setOpenPlayerId(null);
-                }}
-              >
-                <option value={1}>{poolRoundTitle(1)}</option>
-                <option value={2}>{poolRoundTitle(2)}</option>
-                <option value={3}>{poolRoundTitle(3)}</option>
-              </select>
-            </label>
-          </div>
+          {!anyRoundPublic ? (
+            <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-center text-sm text-amber-950 ring-1 ring-amber-200">
+              Pick analysis is not available yet — no pool round pick deadlines
+              have passed. Check back after the first deadline.
+            </p>
+          ) : (
+            <>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <label className="flex items-center gap-2 text-sm font-semibold text-zinc-800">
+                  <span className="shrink-0">Pool round</span>
+                  <select
+                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm"
+                    value={activePoolRound}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (![1, 2, 3].includes(v) || !roundRevealed[v]) return;
+                      setPoolRound(v);
+                      setOpenPlayerId(null);
+                    }}
+                  >
+                    {[1, 2, 3].map((r) => (
+                      <option
+                        key={r}
+                        value={r}
+                        disabled={!roundRevealed[r]}
+                        className={
+                          roundRevealed[r] ? "text-zinc-900" : "text-zinc-400"
+                        }
+                        title={
+                          roundRevealed[r]
+                            ? undefined
+                            : "Available after this pool round’s pick deadline"
+                        }
+                      >
+                        {poolRoundTitle(r)}
+                        {!roundRevealed[r] ? " (locked)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
-          <div className="mb-2 flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
-            <ToggleButton
-              active={conference === "All"}
-              onClick={() => setConference("All")}
-            >
-              All conferences
-            </ToggleButton>
-            <ToggleButton
-              active={conference === "East"}
-              onClick={() => setConference("East")}
-            >
-              East
-            </ToggleButton>
-            <ToggleButton
-              active={conference === "West"}
-              onClick={() => setConference("West")}
-            >
-              West
-            </ToggleButton>
-          </div>
+              <div className="mb-2 flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
+                <ToggleButton
+                  active={conference === "All"}
+                  onClick={() => setConference("All")}
+                >
+                  All conferences
+                </ToggleButton>
+                <ToggleButton
+                  active={conference === "East"}
+                  onClick={() => setConference("East")}
+                >
+                  East
+                </ToggleButton>
+                <ToggleButton
+                  active={conference === "West"}
+                  onClick={() => setConference("West")}
+                >
+                  West
+                </ToggleButton>
+              </div>
 
-          <div className="mb-6 flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
-            <ToggleButton
-              active={positionGroup === "All"}
-              onClick={() => setPositionGroup("All")}
-            >
-              All positions
-            </ToggleButton>
-            <ToggleButton
-              active={positionGroup === "Forwards"}
-              onClick={() => setPositionGroup("Forwards")}
-            >
-              Forwards
-            </ToggleButton>
-            <ToggleButton
-              active={positionGroup === "Defence"}
-              onClick={() => setPositionGroup("Defence")}
-            >
-              Defence
-            </ToggleButton>
-            <ToggleButton
-              active={positionGroup === "Goalies"}
-              onClick={() => setPositionGroup("Goalies")}
-            >
-              Goalies
-            </ToggleButton>
-          </div>
+              <div className="mb-6 flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
+                <ToggleButton
+                  active={positionGroup === "All"}
+                  onClick={() => setPositionGroup("All")}
+                >
+                  All positions
+                </ToggleButton>
+                <ToggleButton
+                  active={positionGroup === "Forwards"}
+                  onClick={() => setPositionGroup("Forwards")}
+                >
+                  Forwards
+                </ToggleButton>
+                <ToggleButton
+                  active={positionGroup === "Defence"}
+                  onClick={() => setPositionGroup("Defence")}
+                >
+                  Defence
+                </ToggleButton>
+                <ToggleButton
+                  active={positionGroup === "Goalies"}
+                  onClick={() => setPositionGroup("Goalies")}
+                >
+                  Goalies
+                </ToggleButton>
+              </div>
 
-          <div className="overflow-x-auto rounded-md border border-zinc-200 bg-white">
-            <table className="w-full min-w-[32rem] table-auto border-collapse text-sm [&_td:last-child]:pr-3 [&_th:last-child]:pr-3">
+              <div className="overflow-x-auto rounded-md border border-zinc-200 bg-white">
+                <table className="w-full min-w-[32rem] table-auto border-collapse text-sm [&_td:last-child]:pr-3 [&_th:last-child]:pr-3">
               <thead className="border-b border-zinc-200 bg-zinc-100">
                 <tr>
                   <SortTh
@@ -346,10 +380,10 @@ export default function AnalysisClient({
                   sortedRows.map((row) => {
                     const meta = pickMetaForRound(
                       roundPickData,
-                      poolRound,
+                      activePoolRound,
                       row.id,
                     );
-                    const pts = ptsForPoolRound(row, poolRound);
+                    const pts = ptsForPoolRound(row, activePoolRound);
                     const expanded = openPlayerId === row.id;
                     const teamHex = teamPrimaryHex(row.team_abbrev);
                     return (
@@ -474,7 +508,7 @@ export default function AnalysisClient({
                     >
                       No players match the current filters for{" "}
                       <span className="font-semibold">
-                        {poolRoundTitle(poolRound)}
+                        {poolRoundTitle(activePoolRound)}
                       </span>
                       {eligibleSet?.size
                         ? " (eligible teams may be limiting the list)"
@@ -485,7 +519,9 @@ export default function AnalysisClient({
                 )}
               </tbody>
             </table>
-          </div>
+              </div>
+            </>
+          )}
         </>
       ) : null}
     </div>
