@@ -4,11 +4,11 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { StandingsLastUpdated } from "../_components/StandingsLastUpdated";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchPoolSettings, isRoundResultsPublic } from "@/lib/pool-settings";
 import { computeStandingsRows } from "@/lib/scoring";
+import StandingsClient from "./ui";
 
 export default async function StandingsPage() {
   const supabase = createServerSupabaseClient();
@@ -92,16 +92,6 @@ export default async function StandingsPage() {
       return String(a.name || "").localeCompare(String(b.name || ""));
     });
 
-  /** Team column wider so names can wrap on mobile; R1–R3+4–Tot stay equal width. */
-  const teamColHead =
-    "w-[36%] min-w-0 px-2 py-2.5 text-left text-xs font-black align-middle";
-  const teamColBody =
-    "w-[36%] min-w-0 px-2 py-1.5 text-left align-top break-words [overflow-wrap:anywhere]";
-  const numColHead =
-    "w-[16%] min-w-0 px-2 py-2.5 text-xs font-black align-middle text-right";
-  const numColBody =
-    "w-[16%] min-w-0 px-2 py-1.5 align-top text-right tabular-nums";
-
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-16">
       <div className="w-full max-w-3xl">
@@ -109,42 +99,7 @@ export default async function StandingsPage() {
           Team Standings
         </h1>
 
-        <div className="mt-10 overflow-x-auto rounded-md">
-          <table className="w-full min-w-0 table-fixed text-sm sm:min-w-[28rem]">
-            <thead>
-              <tr className="border-b border-zinc-300 text-zinc-900">
-                <th className={teamColHead}>Team</th>
-                <th className={numColHead}>R1</th>
-                <th className={numColHead}>R2</th>
-                <th className={numColHead}>R3+4</th>
-                <th className={numColHead}>Total</th>
-              </tr>
-            </thead>
-            <tbody className="text-zinc-900">
-              {displayRows.map((r) => (
-                <tr key={r.slug ?? r.name} className="border-b border-zinc-200">
-                  <td className={teamColBody}>
-                    {r.slug ? (
-                      <Link
-                        className="hover:underline"
-                        href={`/teams/${r.slug}`}
-                        title={r.name}
-                      >
-                        {r.name}
-                      </Link>
-                    ) : (
-                      r.name
-                    )}
-                  </td>
-                  <td className={numColBody}>{r.r1}</td>
-                  <td className={numColBody}>{r.r2}</td>
-                  <td className={numColBody}>{r.r34}</td>
-                  <td className={numColBody}>{r.total}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StandingsClient rows={displayRows} />
 
         {season ? (
           <StandingsLastUpdated iso={statsLastWrittenAt} />
